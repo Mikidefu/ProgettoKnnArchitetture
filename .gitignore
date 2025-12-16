@@ -1,0 +1,21 @@
+# Build outputs
+bin/
+obj/
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.exe
+
+# Code::Blocks user-specific / generated files
+*.depend
+*.layout
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+
+# Optional: logs
+*.log
