@@ -88,6 +88,7 @@
 			<Add directory="C:/Users/acer/Desktop/progetto_knn/progetto_knn/./include" />
 		</Compiler>
 		<UnitsGlob directory="include" wildcard="" recursive="0" id="316380917" addToProject="1" />
+		<Unit filename=".gitignore" />
 		<Unit filename="include/compare.h">
 			<Option glob="316380917" />
 			<Option target="Debug" />
