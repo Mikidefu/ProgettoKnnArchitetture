@@ -1,9 +1,45 @@
 \maketitle
-\chapter {Intreduzione}
+\chapter {Introduzione}
 La traccia del progetto richiedeva agli studenti, sostanzialmente, di implementare l'algoritmo KNN (K Nearest Neighbors) utilizzato come modello di machine learning e impiegato per la classificazione degli oggetti.
 
 L'obiettivo è quello di trovare, per ogni elemento della collezione Query i k punti più simili presenti nel dataset dei dati. 
 
 La ricerca dei k elementi più simili viene fatta sulla base di una misurazione, la distanza euclidea, che va a calcolare la distanza fra vettori prendendo in considerazione ogni componente.
 
-Il problema principale risiede nelle risorse che il calcolo della distanza euclidea, calcolata per ogni vettore presente in Q per tutti gli elementi presenti nel dataset, richiederebbe. Il tempo di esecuzione, sviluppando la distanza euclidea sarebbe $O(n*D)$ in cui n sono gli elementi del dataset e D sono
+Il problema principale risiede nelle risorse che il calcolo della distanza euclidea, calcolata per ogni vettore presente in Q per tutti gli elementi presenti nel dataset, richiederebbe. Il tempo di esecuzione, sviluppando la distanza euclidea sarebbe $O(n*D*q)$ in cui n sono gli elementi del dataset, q sono gli elementi presenti nella collezione Query e D sono le dimensioni degli elementi nel dataset, le colonne della matrice del dataset. 
+
+Valutando che si sta lavorando con collezioni molto estese di dati sarebbe buona norma provare a ridurre per quanto possibile i tempi di esecuzione.
+
+\subsection{Come ovviare al problema del costo computazionale}
+Per ridurre i costi la strategia consigliata dalla traccia è quella di fare una sorta di pruning del dataset, quindi di non calcolare la distanza euclidea fra ogni query ed ogni punto del dataset ma di lavorare solo su alcuni di questi punti definiti Pivot. Questa tecnica è utilizzata per ridurre lo spazio di ricerca dei vicini.
+
+I pivot sono un sottoinsieme di punti h selezionati dal dataset che fungono da riferimenti spaziali fissi. L'idea centrale è che, conoscendo la distanza tra un punto del dataset e un pivot, e calcolando la distanza tra la query e lo stesso pivot, è possibile stimare la distanza tra query e punto senza calcolarla effettivamente.
+
+Questa stima si basa sulla disuguaglianza triangolare applicata agli spazi metrici: \begin{equation} |d(q, p) - d(v, p)| \le d(q, v) \end{equation}
+
+Il termine a sinistra, $|d(q, p) - d(v, p)|$, rappresenta un limite inferiore (lower bound) della distanza reale $d(q, v)$.
+
+Durante la fase di ricerca, se questo limite inferiore risulta superiore alla distanza del $k$-esimo vicino attualmente più lontano nella lista dei risultati ($d_{max}$), il punto $v$ può essere scartato immediatamente.
+
+Questa strategia permette di ridurre drasticamente il numero di calcoli esatti in virgola mobile, limitando l'uso delle istruzioni SIMD più onerose (SSE/AVX) solo ai candidati che hanno un'alta probabilità di far parte del set dei vicini più prossimi.
+
+\subsection{La distanza approssimata e la quantizzazione binaria}
+Nonostante l'efficacia del pruning tramite pivot, un numero considerevole di punti del dataset potrebbe comunque richiedere una valutazione più approfondita e quindi il calcolo della distanza euclidea. 
+
+Per evitare di ricorrere al calcolo della distanza euclidea esatta, la traccia introduce il concetto di distanza approssimata ($\tilde{d}$).
+
+Questa tecnica si basa sulla quantizzazione binaria dei vettori: per ogni vettore $v \in DS$ (e per ogni query $q$), vengono estratti due vettori binari, $v^+$ e $v^-$, di dimensione $D$. Tali vettori identificano le componenti che presentano maggiore valore assoluto:
+\begin{itemize}
+	\item $v^+$ contiene 1 in corrispondenza delle $x$ componenti più 						grandi e positive, 0 altrove;
+	\item $v^-$ contiene 1 in corrispondenza delle $x$ componenti più 						grandi e negative, 0 altrove.
+\end{itemize}
+
+Grazie a questa rappresentazione, la distanza tra due punti può essere stimata mediante operazioni di prodotto scalare tra vettori binari, estremamente efficienti da calcolare a livello hardware:
+\begin{equation}\tilde{d}(v,w) = (v^+ \cdot w^+) + (v^- \cdot w^-) - (v^+ \cdot w^-) - (v^- \cdot w^+)\end{equation}.
+
+In sintesi, il flusso decisionale per ogni punto $v$ del dataset rispetto a una query $q$ segue una gerarchia di tre livelli:
+\begin{enumerate}
+	\item Filtro Pivot: Calcolo del lower bound tramite disuguaglianza 							triangolare. Se il punto è palesemente lontano, viene scartato.
+	\item Filtro Approssimato: Se il punto supera il primo filtro, si calcola $					\tilde{d}(q, v)$. Se l'approssimazione è peggiore del candidato $k$-					esimo attuale, il punto viene scartato.
+\item Verifica Esatta: Solo per i punti superstiti si procede al calcolo della 					distanza euclidea esatta (Eq. 1) e all'eventuale aggiornamento della 				lista dei $k$ vicini. Il guadagno in termini di tempi di esecuzione 						risiede proprio in quest'ultimo passaggio: la formula matematica 					della distanza euclidea viene effetutata solo su questi ultimi 							elementi che hanno passato le prime operazioni di filtraggio.
+\end{enumerate}
