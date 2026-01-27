@@ -39,7 +39,7 @@ Grazie a questa rappresentazione, la distanza tra due punti può essere stimata 
 
 In sintesi, il flusso decisionale per ogni punto $v$ del dataset rispetto a una query $q$ segue una gerarchia di tre livelli:
 \begin{enumerate}
-	\item Filtro Pivot: Calcolo del lower bound tramite disuguaglianza 							triangolare. Se il punto è palesemente lontano, viene scartato.
-	\item Filtro Approssimato: Se il punto supera il primo filtro, si calcola $					\tilde{d}(q, v)$. Se l'approssimazione è peggiore del candidato $k$-					esimo attuale, il punto viene scartato.
-\item Verifica Esatta: Solo per i punti superstiti si procede al calcolo della 					distanza euclidea esatta (Eq. 1) e all'eventuale aggiornamento della 				lista dei $k$ vicini. Il guadagno in termini di tempi di esecuzione 						risiede proprio in quest'ultimo passaggio: la formula matematica 					della distanza euclidea viene effetutata solo su questi ultimi 							elementi che hanno passato le prime operazioni di filtraggio.
+	\item Filtro Pivot: Calcolo del lower bound tramite disuguaglianza 	triangolare. Se il punto è palesemente lontano, viene scartato.
+	\item Filtro Approssimato: Se il punto supera il primo filtro, si calcola $\tilde{d}(q, v)$. Se l'approssimazione è peggiore del candidato $k$-esimo attuale, il punto viene scartato.
+	\item Verifica Esatta: Solo per i punti superstiti si procede al calcolo della distanza euclidea esatta (Eq. 1) e all'eventuale aggiornamento della lista dei $k$ vicini. Il guadagno in termini di tempi di esecuzione risiede proprio in quest'ultimo passaggio: la formula matematica della distanza euclidea viene effetutata 			solo su questi ultimi elementi che hanno passato le prime operazioni di filtraggio.
 \end{enumerate}
