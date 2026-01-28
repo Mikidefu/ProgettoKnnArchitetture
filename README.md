@@ -54,7 +54,7 @@ Il launcher eseguirà in sequenza tutte le configurazioni e genererà due file n
 
 ---
 
-## 🛠 Esecuzione Manuale (Singola Configurazione)
+## Esecuzione Manuale (Singola Configurazione)
 
 Se si desidera eseguire o debuggare una singola versione specifica:
 
