@@ -1,3 +1,37 @@
 \maketitle
 \chapter{Confronto dei tempi rispetto alle ottimizzazioni analizzate}
-Seguirà adesso l'analisi dei tempi ottenuti nelle diverse versioni del progetto richieste dalla traccia.
+In questo capitolo vengono analizzati i risultati ottenuti dai test prestazionali, confrontando le diverse implementazioni dell'algoritmo k-NN. 
+
+I dati, riassunti nella tabella seguente, permettono di valutare l'impatto reale della vettorizzazione Assembly e del parallelismo multi-thread rispetto alle implementazioni scalari in C.
+
+\begin{figure}[H] 
+    \centering 
+    \includegraphics[width=0.8\textwidth]{file_relazione/imgs/report_html.png} 
+\end{figure}
+
+
+I tempi di esecuzione riportati si riferiscono alle fasi di Build (costruzione delle strutture dati utili alle ottimizzazioni e la quantizzazione) e Query (ricerca dei k vicini, quindi l'algoritmo richiesto dal progetto).
+
+L'analisi dei dati evidenzia miglioramenti radicali grazie all'uso del linguaggio Assembly e delle istruzioni SIMD.
+
+Il passaggio dall'implementazione scalare in C a quella ottimizzata in Assembly (SSE2/AVX2) produce un salto prestazionale enorme:
+\begin{enumerate}
+	\item Nella versione a 32-bit, la query passa da 6746 ms a soli 400 ms, con uno speedup di circa 17x;
+
+	\item La fase di Build vede il tempo dimezzato (da 157 ms a 77 ms), a conferma della maggiore 				efficienza nella gestione dei cicli di quantizzazione e memoria;
+
+	\item È interessante notare come l'implementazione Assembly sia significativamente più veloce della 		versione a "Intrinsic", dimostrando che la scrittura manuale del codice ha permesso una
+		gestione dei registri e delle istruzioni (come HADDPS) più efficace di quella offerta dall'auto-				vettorizzazione del compilatore.
+\end{enumerate}
+
+L'introduzione di OpenMP porta le prestazioni a un livello superiore:
+\begin{enumerate}
+	\item La configurazione 32-bit SSE2 + OpenMP raggiunge il tempo record di 46 ms nella fase di query;
+
+	\item Rispetto alla versione scalare iniziale (6746 ms), lo speedup totale per la query è di circa 146x. 				Questo risultato dimostra come l'algoritmo sia altamente parallelizzabile: mentre il SIMD 					accelera il calcolo della singola distanza, OpenMP permette di processare più query 						contemporaneamente.
+\end{enumerate}
+
+\section{Conclusioni}
+I test confermano che l'architettura a tre livelli (Filtro Pivot, Filtro Approssimato e Verifica Esatta) descritta nel Capitolo 1 è estremamente efficace. Lo scarto tra i tempi "Scalar" e "Assembly" indica che la stragrande maggioranza della potenza computazionale viene risparmiata grazie ai filtri binari e alla velocità delle istruzioni POPCNT e CMPPS implementate a basso livello.
+
+
