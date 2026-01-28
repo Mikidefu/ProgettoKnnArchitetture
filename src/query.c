@@ -6,6 +6,11 @@
 #include "quantization.h"
 #include "distance.h"
 
+// Se OpenMP è attivo, includiamo la libreria
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 // -------------------------------------------------------------
 // Trova il vicino peggiore (max distanza approssimata)
 // -------------------------------------------------------------
@@ -77,7 +82,6 @@ void knn_query_single(const MatrixF32 *ds,
     for (size_t i = 0; i < n; i++) {
 
         // Limite inferiore via pivot:
-        // d*_pvt = max_j | d(v,p_j) - d(q,p_j) |
         int d_star = 0;
         for (int j = 0; j < h; j++) {
             int dvp = idx->dist[i * h + j];  // ˜d(v_i, p_j)
@@ -118,19 +122,13 @@ void knn_query_single(const MatrixF32 *ds,
         neighbors[i].dist_real = euclidean_distance(q, v, D);
     }
 
-    // NOTA IMPORTANTE:
-    // NON ordiniamo i vicini per distanza reale.
-    // I file di riferimento hanno i vicini in un ordine specifico
-    // (non per forza crescente), quindi manteniamo l'ordine generato
-    // dall'algoritmo di selezione.
-
     free(vp_q);
     free(vn_q);
     free(dq_pivot);
 }
 
 // -------------------------------------------------------------
-// KNN per tutte le query
+// KNN per tutte le query (MODIFICATA PER OPENMP)
 // -------------------------------------------------------------
 void knn_query_all(const MatrixF32 *ds,
                    const Index *idx,
@@ -141,9 +139,14 @@ void knn_query_all(const MatrixF32 *ds,
 {
     if (!ds || !idx || !queries || !results) return;
 
+    // Se compiliamo con -fopenmp, questa direttiva parallelizza il ciclo.
+    // Altrimenti viene ignorata e il ciclo è sequenziale.
+    #pragma omp parallel for schedule(dynamic)
     for (size_t qi = 0; qi < queries->n; qi++) {
         const float *q = &queries->data[qi * queries->d];
         Neighbor *nb = &results[qi * k];
+
+        // Ogni thread elabora una query in autonomia
         knn_query_single(ds, idx, q, k, x, nb);
     }
 }

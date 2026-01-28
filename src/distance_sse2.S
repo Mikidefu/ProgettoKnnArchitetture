@@ -13,31 +13,39 @@ ones16:
 # RDX = vn
 # R8  = wp
 # R9  = wn
-# 5° arg (D) sullo stack a [RSP + 40] all'ingresso
+# 5° arg (D) è sullo stack. Originalmente a [RSP + 40].
+# Dopo il nostro 'sub rsp, 104', sarà a [RSP + 40 + 104] = [RSP + 144].
 
 approximate_distance_sse2_asm:
-    # Leggi D PRIMA di cambiare RSP (altrimenti l'offset cambia)
-    mov r10, qword ptr [rsp+40]     # r10 = D
+    # --- PROLOGO: SALVATAGGIO REGISTRI NON-VOLATILI ---
+    # Dobbiamo salvare XMM6, XMM7, XMM8, XMM9, XMM10, XMM11
+    # 6 registri * 16 byte = 96 byte. Arrotondiamo a 104 per allineamento stack 16-byte.
+    sub rsp, 104
 
-    # --- salva GPR non-volatili che useremo ---
+    movdqu xmmword ptr [rsp + 0],  xmm6
+    movdqu xmmword ptr [rsp + 16], xmm7
+    movdqu xmmword ptr [rsp + 32], xmm8
+    movdqu xmmword ptr [rsp + 48], xmm9
+    movdqu xmmword ptr [rsp + 64], xmm10
+    movdqu xmmword ptr [rsp + 80], xmm11
+
+    # Salviamo anche i GPR non volatili usati (R12-R15 erano già salvati nel tuo codice originale,
+    # ma ora l'offset dello stack per loro cambia se usiamo push/pop.
+    # Per semplicità, manteniamo il tuo stile push/pop DOPO il mio sub rsp).
     push r12
     push r13
     push r14
     push r15
 
-    # --- salva XMM non-volatili che useremo (XMM6-11) ---
-    sub rsp, 96
-    movdqu xmmword ptr [rsp+0],  xmm6
-    movdqu xmmword ptr [rsp+16], xmm7
-    movdqu xmmword ptr [rsp+32], xmm8
-    movdqu xmmword ptr [rsp+48], xmm9
-    movdqu xmmword ptr [rsp+64], xmm10
-    movdqu xmmword ptr [rsp+80], xmm11
+    # --- INIZIO LOGICA ---
+    # Leggi D (offset 144 + 4*8 bytes di push = 176)
+    # Calcolo: 40 (shadow) + 104 (xmm save) + 32 (gpr save) = 176
+    mov r10, qword ptr [rsp + 176]
 
     # Costanti:
-    pxor xmm5, xmm5                                # xmm5 = zero (volatile)
-    movdqu xmm6, xmmword ptr [rip + ones16]         # xmm6 = 0x01 bytes (NON-volatile -> salvato)
-    pcmpeqb xmm7, xmm7                              # xmm7 = 0xFF bytes (all ones) (NON-volatile -> salvato)
+    pxor xmm5, xmm5                                 # xmm5 = zero (volatile)
+    movdqu xmm6, xmmword ptr [rip + ones16]         # xmm6 = 1s (NON-volatile, salvato)
+    pcmpeqb xmm7, xmm7                              # xmm7 = FFs (NON-volatile, salvato)
 
     # fast-path D == 256
     cmp r10, 256
@@ -60,16 +68,16 @@ approximate_distance_sse2_asm:
     movdqu xmm2, xmmword ptr [r8]    # wp
     movdqu xmm3, xmmword ptr [r9]    # wn
 
-    # ---- pp: count((vp & wp) != 0) ----
+    # ---- pp ----
     movdqa xmm4, xmm0
     pand   xmm4, xmm2
-    pcmpeqb xmm4, xmm5        # 0xFF where ==0
-    pxor    xmm4, xmm7        # 0xFF where !=0
-    pand    xmm4, xmm6        # 0x01 where !=0
+    pcmpeqb xmm4, xmm5
+    pxor    xmm4, xmm7
+    pand    xmm4, xmm6
     psadbw  xmm4, xmm5
     paddq   xmm8, xmm4
 
-    # ---- nn: count((vn & wn) != 0) ----
+    # ---- nn ----
     movdqa xmm4, xmm1
     pand   xmm4, xmm3
     pcmpeqb xmm4, xmm5
@@ -78,7 +86,7 @@ approximate_distance_sse2_asm:
     psadbw  xmm4, xmm5
     paddq   xmm9, xmm4
 
-    # ---- pn: count((vp & wn) != 0) ----
+    # ---- pn ----
     movdqa xmm4, xmm0
     pand   xmm4, xmm3
     pcmpeqb xmm4, xmm5
@@ -87,7 +95,7 @@ approximate_distance_sse2_asm:
     psadbw  xmm4, xmm5
     paddq   xmm10, xmm4
 
-    # ---- np: count((vn & wp) != 0) ----
+    # ---- np ----
     movdqa xmm4, xmm1
     pand   xmm4, xmm2
     pcmpeqb xmm4, xmm5
@@ -177,7 +185,7 @@ approximate_distance_sse2_asm:
     jmp .epilogue
 
 # --------------------------
-# fast-path D == 256 (16x16B)
+# fast-path D == 256
 # --------------------------
 .d256:
     pxor xmm8,  xmm8
@@ -192,6 +200,7 @@ approximate_distance_sse2_asm:
         movdqu xmm2, xmmword ptr [r8 +off]
         movdqu xmm3, xmmword ptr [r9 +off]
 
+        # pp
         movdqa xmm4, xmm0
         pand   xmm4, xmm2
         pcmpeqb xmm4, xmm5
@@ -200,6 +209,7 @@ approximate_distance_sse2_asm:
         psadbw  xmm4, xmm5
         paddq   xmm8, xmm4
 
+        # nn
         movdqa xmm4, xmm1
         pand   xmm4, xmm3
         pcmpeqb xmm4, xmm5
@@ -208,6 +218,7 @@ approximate_distance_sse2_asm:
         psadbw  xmm4, xmm5
         paddq   xmm9, xmm4
 
+        # pn
         movdqa xmm4, xmm0
         pand   xmm4, xmm3
         pcmpeqb xmm4, xmm5
@@ -216,6 +227,7 @@ approximate_distance_sse2_asm:
         psadbw  xmm4, xmm5
         paddq   xmm10, xmm4
 
+        # np
         movdqa xmm4, xmm1
         pand   xmm4, xmm2
         pcmpeqb xmm4, xmm5
@@ -253,18 +265,19 @@ approximate_distance_sse2_asm:
     jmp .epilogue
 
 .epilogue:
-    # ripristina XMM non-volatili
-    movdqu xmm6,  xmmword ptr [rsp+0]
-    movdqu xmm7,  xmmword ptr [rsp+16]
-    movdqu xmm8,  xmmword ptr [rsp+32]
-    movdqu xmm9,  xmmword ptr [rsp+48]
-    movdqu xmm10, xmmword ptr [rsp+64]
-    movdqu xmm11, xmmword ptr [rsp+80]
-    add rsp, 96
-
-    # ripristina GPR non-volatili
+    # Ripristina GPR
     pop r15
     pop r14
     pop r13
     pop r12
+
+    # Ripristina XMM
+    movdqu xmm6,  xmmword ptr [rsp + 0]
+    movdqu xmm7,  xmmword ptr [rsp + 16]
+    movdqu xmm8,  xmmword ptr [rsp + 32]
+    movdqu xmm9,  xmmword ptr [rsp + 48]
+    movdqu xmm10, xmmword ptr [rsp + 64]
+    movdqu xmm11, xmmword ptr [rsp + 80]
+
+    add rsp, 104
     ret

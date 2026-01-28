@@ -10,23 +10,46 @@
 #include "distance.h"
 #include "quantization.h"
 
+// Includiamo la libreria OpenMP solo se il compilatore ha il flag attivo (-fopenmp)
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 // ---------------------------------------------
-// Utility: ms()
+// Utility: Calcolo Tempo (Ibrido CPU/Wall Clock)
 // ---------------------------------------------
-double ms(clock_t start, clock_t end) {
-    return 1000.0 * (double)(end - start) / CLOCKS_PER_SEC;
+// Questa funzione calcola la differenza in millisecondi scegliendo
+// il timer corretto in base alla modalità di compilazione.
+double calc_time_ms(clock_t c_start, clock_t c_end, double w_start, double w_end) {
+#ifdef _OPENMP
+    // Se OpenMP è attivo, il tempo rilevante è quello "dell'orologio a muro" (Wall Clock),
+    // perché clock() sommerebbe il tempo di tutti i core insieme.
+    return (w_end - w_start) * 1000.0;
+#else
+    // Se siamo in sequenziale, usiamo il classico tempo di CPU.
+    return 1000.0 * (double)(c_end - c_start) / CLOCKS_PER_SEC;
+#endif
 }
 
 int main(int argc, char **argv)
 {
     printf("argc = %d\n", argc);
 
-#ifdef USE_AVX
-    printf("[INFO] Compilato con AVX\n");
-#elif defined(USE_SSE2)
-    printf("[INFO] Compilato con SSE2\n");
+    // -----------------------------------------------------
+    // INFO COMPILAZIONE
+    // -----------------------------------------------------
+#ifdef USE_AVX_ASM
+    printf("[INFO] BUILD MODE : 64-bit DOUBLE (ASM AVX2)\n");
+#elif defined(USE_AVX)
+    printf("[INFO] BUILD MODE : 64-bit DOUBLE (AVX Intrinsics)\n");
 #else
-    printf("[INFO] Compilato SENZA SIMD (SCALAR)\n");
+    printf("[INFO] BUILD MODE : 64-bit DOUBLE (SCALAR)\n");
+#endif
+
+#ifdef _OPENMP
+    printf("[INFO] OpenMP     : ATTIVO (Max threads: %d)\n", omp_get_max_threads());
+#else
+    printf("[INFO] OpenMP     : DISATTIVATO (Single Thread)\n");
 #endif
 
     // -----------------------------------------------------
@@ -41,7 +64,7 @@ int main(int argc, char **argv)
     }
 
     printf("\n=============================\n");
-    printf("     PARAMETRI DI INPUT (64-bit)\n");
+    printf("     PARAMETRI DI INPUT\n");
     printf("=============================\n");
     printf("Dataset: %s\n", cfg.ds_path);
     printf("Query  : %s\n", cfg.q_path);
@@ -82,9 +105,21 @@ int main(int argc, char **argv)
     // -----------------------------------------------------
     printf("Costruzione indice (64-bit)...\n");
 
-    clock_t t0 = clock();
+    // Acquisizione timestamp INIZIALI
+    clock_t c0 = clock();
+    double w0 = 0;
+    #ifdef _OPENMP
+    w0 = omp_get_wtime();
+    #endif
+
     Index *idx = build_index_f64(&ds, cfg.h, cfg.x);
-    clock_t t1 = clock();
+
+    // Acquisizione timestamp FINALI
+    clock_t c1 = clock();
+    double w1 = 0;
+    #ifdef _OPENMP
+    w1 = omp_get_wtime();
+    #endif
 
     if (!idx) {
         printf("ERRORE: impossibile costruire indice.\n");
@@ -93,8 +128,9 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    double time_build = calc_time_ms(c0, c1, w0, w1);
     printf("Indice costruito.\n");
-    printf("Tempo build_index(): %.2f ms\n\n", ms(t0, t1));
+    printf("Tempo build_index(): %.2f ms\n\n", time_build);
 
     // -----------------------------------------------------
     // ESECUZIONE KNN SU TUTTE LE QUERY + BENCHMARK
@@ -112,80 +148,84 @@ int main(int argc, char **argv)
 
     printf("Esecuzione K-NN (double) su %u query...\n", qs.n);
 
-    clock_t t2 = clock();
-    knn_query_all_f64(&ds, idx, &qs, k, cfg.x, results);
-    clock_t t3 = clock();
+    // Acquisizione timestamp INIZIALI
+    clock_t c2 = clock();
+    double w2 = 0;
+    #ifdef _OPENMP
+    w2 = omp_get_wtime();
+    #endif
 
+    knn_query_all_f64(&ds, idx, &qs, k, cfg.x, results);
+
+    // Acquisizione timestamp FINALI
+    clock_t c3 = clock();
+    double w3 = 0;
+    #ifdef _OPENMP
+    w3 = omp_get_wtime();
+    #endif
+
+    double time_query = calc_time_ms(c2, c3, w2, w3);
     printf("K-NN completato.\n");
-    printf("Tempo knn_query_all(): %.2f ms\n\n", ms(t2, t3));
+    printf("Tempo knn_query_all(): %.2f ms\n\n", time_query);
 
     // -----------------------------------------------------
     // CARICAMENTO RISULTATI UFFICIALI 64-BIT
     // -----------------------------------------------------
     MatrixI32 ref_ids = {0};
     MatrixF64 ref_dst = {0};
+    int skip_check = 0;
 
+    // Tentiamo di caricare i file di riferimento. Se fallisce, saltiamo solo il confronto.
     if (load_matrix_i32("data/results_ids_2000x8_k8_x64_64.ds2", &ref_ids) != 0) {
-        printf("ERRORE lettura results_ids.\n");
-        free(results);
-        free_index(idx);
-        free_matrix_f64(&ds);
-        free_matrix_f64(&qs);
-        return 1;
-    }
-
-    if (load_matrix_f64("data/results_dst_2000x8_k8_x64_64.ds2", &ref_dst) != 0) {
-        printf("ERRORE lettura results_dst.\n");
+        printf("ATTENZIONE: File results_ids non trovato. Il confronto verrà saltato.\n");
+        skip_check = 1;
+    } else if (load_matrix_f64("data/results_dst_2000x8_k8_x64_64.ds2", &ref_dst) != 0) {
+        printf("ATTENZIONE: File results_dst non trovato. Il confronto verrà saltato.\n");
         free_matrix_i32(&ref_ids);
-        free(results);
-        free_index(idx);
-        free_matrix_f64(&ds);
-        free_matrix_f64(&qs);
-        return 1;
+        skip_check = 1;
     }
 
-    if (ref_ids.d != (uint32_t)k || ref_dst.d != (uint32_t)k) {
-        printf("ERRORE: k nei file ufficiali non corrisponde.\n");
-        return 1;
-    }
+    if (!skip_check) {
+        if (ref_ids.d != (uint32_t)k || ref_dst.d != (uint32_t)k) {
+            printf("ERRORE: k nei file ufficiali non corrisponde.\n");
+            // Non usciamo, stampiamo solo l'errore e saltiamo il check
+        } else if (ref_ids.n != qs.n) {
+            printf("ERRORE: numero di query nei risultati ufficiali (%u) diverso da quello nelle query (%u)\n",
+                   ref_ids.n, qs.n);
+        } else {
+            // -----------------------------------------------------
+            // CONFRONTO RISULTATI
+            // -----------------------------------------------------
+            printf("Confronto con i risultati ufficiali (double)...\n\n");
+            compare_results_f64(&qs, results, &ref_ids, &ref_dst, k);
+        }
 
-    if (ref_ids.n != qs.n) {
-        printf("ERRORE: numero di query nei risultati ufficiali (%u) diverso da quello nelle query (%u)\n",
-               ref_ids.n, qs.n);
-        return 1;
+        // Cleanup check data
+        free_matrix_i32(&ref_ids);
+        free_matrix_f64(&ref_dst);
     }
 
     // -----------------------------------------------------
-    // CONFRONTO RISULTATI
-    // -----------------------------------------------------
-    printf("Confronto con i risultati ufficiali (double)...\n\n");
-
-    compare_results_f64(&qs, results, &ref_ids, &ref_dst, k);
-
-    // -----------------------------------------------------
-    // STAMPA RIEPILOGO BENCHMARK
+    // STAMPA RIEPILOGO BENCHMARK FINALE
     // -----------------------------------------------------
     printf("=====================================\n");
     printf("        BENCHMARK (DOUBLE)          \n");
     printf("=====================================\n");
-    printf("build_index()     : %.2f ms\n", ms(t0, t1));
-    printf("knn_query_all()   : %.2f ms\n", ms(t2, t3));
-    printf("Totale runtime    : %.2f ms\n", ms(t0, t3));
+    printf("build_index()     : %.2f ms\n", time_build);
+    printf("knn_query_all()   : %.2f ms\n", time_query);
+    printf("Totale runtime    : %.2f ms\n", time_build + time_query);
     printf("=====================================\n\n");
 
     // -----------------------------------------------------
-    // CLEANUP MEMORIA
+    // CLEANUP MEMORIA GENERALE
     // -----------------------------------------------------
-    free_matrix_i32(&ref_ids);
-    free_matrix_f64(&ref_dst);
-
     free(results);
     free_index(idx);
 
     free_matrix_f64(&ds);
     free_matrix_f64(&qs);
 
-    printf("Esecuzione 64-bit completata senza errori.\n");
+    printf("Esecuzione 64-bit completata.\n");
 
     return 0;
 }

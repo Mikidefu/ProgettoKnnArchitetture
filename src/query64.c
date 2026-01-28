@@ -5,6 +5,10 @@
 #include <float.h>
 #include <stdlib.h>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 // worst neighbor (max dist_approx)
 static int find_worst_neighbor64(const Neighbor64 *neighbors, int k)
 {
@@ -105,15 +109,12 @@ void knn_query_single_f64(const MatrixF64 *ds,
     free(dq_pivot);
 }
 
-void knn_query_all_f64(const MatrixF64 *ds,
-                       const Index *idx,
-                       const MatrixF64 *queries,
-                       int k,
-                       int x,
-                       Neighbor64 *results)
+void knn_query_all_f64(const MatrixF64 *ds, const Index *idx, const MatrixF64 *queries, int k, int x, Neighbor64 *results)
 {
     if (!ds || !idx || !queries || !results) return;
 
+    // Questa riga viene IGNORATA se non compiliamo con -fopenmp
+    #pragma omp parallel for schedule(dynamic)
     for (size_t qi = 0; qi < queries->n; qi++) {
         const double *q = &queries->data[qi * queries->d];
         Neighbor64 *nb = &results[qi * k];
