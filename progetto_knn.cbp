@@ -23,7 +23,8 @@
 				<Option projectLinkerOptionsRelation="0" />
 			</Target>
 			<Target title="Release_Scalar">
-				<Option output="progetto_knn" prefix_auto="1" extension_auto="1" />
+				<Option output="bin/Release_Scalar/progetto_knn" prefix_auto="1" extension_auto="1" />
+				<Option object_output="obj/Release_Scalar/" />
 				<Option type="1" />
 				<Option compiler="gcc" />
 				<Option parameters="-d data/dataset_2000x256_32.ds2 -q data/query_2000x256_32.ds2 -h 16 -k 8 -x 64 " />
@@ -32,7 +33,8 @@
 				</Compiler>
 			</Target>
 			<Target title="Release_SSE2">
-				<Option output="progetto_knn" prefix_auto="1" extension_auto="1" />
+				<Option output="bin/Release_SSE2/progetto_knn" prefix_auto="1" extension_auto="1" />
+				<Option object_output="obj/Release_SSE2/" />
 				<Option type="1" />
 				<Option compiler="gcc" />
 				<Option parameters="-d data/dataset_2000x256_32.ds2 -q data/query_2000x256_32.ds2 -h 16 -k 8 -x 64 " />
@@ -43,7 +45,8 @@
 				</Compiler>
 			</Target>
 			<Target title="Release_Scalar64">
-				<Option output="progetto_knn" prefix_auto="1" extension_auto="1" />
+				<Option output="bin/Release_Scalar64/progetto_knn" prefix_auto="1" extension_auto="1" />
+				<Option object_output="obj/Release_Scalar64/" />
 				<Option type="1" />
 				<Option compiler="gcc" />
 				<Option parameters="-d data/dataset_2000x256_64.ds2 -q data/query_2000x256_64.ds2 -h 16 -k 8 -x 64 " />
@@ -52,7 +55,8 @@
 				</Compiler>
 			</Target>
 			<Target title="Release_AVX64">
-				<Option output="progetto_knn" prefix_auto="1" extension_auto="1" />
+				<Option output="bin/Release_AVX64/progetto_knn" prefix_auto="1" extension_auto="1" />
+				<Option object_output="obj/Release_AVX64/" />
 				<Option type="1" />
 				<Option compiler="gcc" />
 				<Option parameters="-d data/dataset_2000x256_64.ds2 -q data/query_2000x256_64.ds2 -h 16 -k 8 -x 64 " />
@@ -62,7 +66,8 @@
 				</Compiler>
 			</Target>
 			<Target title="Release_AVX64ASSEMBLY">
-				<Option output="progetto_knn" prefix_auto="1" extension_auto="1" />
+				<Option output="bin/Release_AVX64ASSEMBLY/progetto_knn" prefix_auto="1" extension_auto="1" />
+				<Option object_output="obj/Release_AVX64ASSEMBLY/" />
 				<Option type="1" />
 				<Option compiler="gcc" />
 				<Option parameters="-d data/dataset_2000x256_64.ds2 -q data/query_2000x256_64.ds2 -h 16 -k 8 -x 64 " />
@@ -71,9 +76,13 @@
 					<Add option="-mavx2" />
 					<Add option="-DUSE_AVX_ASM" />
 				</Compiler>
+				<Linker>
+					<Add option="-fopenmp" />
+				</Linker>
 			</Target>
 			<Target title="Release_SSE2ASSEMBLY">
-				<Option output="progetto_knn" prefix_auto="1" extension_auto="1" />
+				<Option output="bin/Release_SSE2ASSEMBLY/progetto_knn" prefix_auto="1" extension_auto="1" />
+				<Option object_output="obj/Release_SSE2ASSEMBLY/" />
 				<Option type="1" />
 				<Option compiler="gcc" />
 				<Option parameters="-d data/dataset_2000x256_32.ds2 -q data/query_2000x256_32.ds2 -h 16 -k 8 -x 64" />
@@ -83,18 +92,70 @@
 					<Add option="-DUSE_SSE2_ASM" />
 				</Compiler>
 			</Target>
+			<Target title="Release_AVX64_OpenMP">
+				<Option output="bin/Release_AVX64_OpenMP/progetto_knn" prefix_auto="1" extension_auto="1" />
+				<Option object_output="obj/Release_AVX64_OpenMP/" />
+				<Option type="1" />
+				<Option compiler="gcc" />
+				<Option parameters="-d data/dataset_2000x256_64.ds2 -q data/query_2000x256_64.ds2 -h 16 -k 8 -x 64 " />
+				<Compiler>
+					<Add option="-O3" />
+					<Add option="-fopenmp -mavx2" />
+					<Add option="-DUSE_AVX_ASM" />
+				</Compiler>
+				<Linker>
+					<Add option="-fopenmp" />
+					<Add library="gomp" />
+				</Linker>
+			</Target>
+			<Target title="Release_SSE2_OpenMP">
+				<Option output="bin/Release_SSE2_OpenMP/progetto_knn" prefix_auto="1" extension_auto="1" />
+				<Option object_output="obj/Release_SSE2_OpenMP/" />
+				<Option type="1" />
+				<Option compiler="gcc" />
+				<Option parameters="-d data/dataset_2000x256_32.ds2 -q data/query_2000x256_32.ds2 -h 16 -k 8 -x 64" />
+				<Compiler>
+					<Add option="-O3" />
+					<Add option="-fopenmp -msse2" />
+					<Add option="-DUSE_SSE2_ASM" />
+				</Compiler>
+				<Linker>
+					<Add option="-fopenmp" />
+					<Add library="gomp" />
+				</Linker>
+			</Target>
+			<Target title="Benchmark_Report">
+				<Option output="bin/Benchmark_Report/report_launcher" prefix_auto="1" extension_auto="1" />
+				<Option type="1" />
+				<Option compiler="gcc" />
+			</Target>
 		</Build>
+		<VirtualTargets>
+			<Add alias="Build_TUTTO" targets="Release_Scalar;Release_SSE2;Release_Scalar64;Release_AVX64;Release_AVX64ASSEMBLY;Release_SSE2ASSEMBLY;Release_AVX64_OpenMP;Release_SSE2_OpenMP;Benchmark_Report;" />
+		</VirtualTargets>
 		<Compiler>
 			<Add directory="C:/Users/acer/Desktop/progetto_knn/progetto_knn/./include" />
 		</Compiler>
 		<UnitsGlob directory="include" wildcard="" recursive="0" id="316380917" addToProject="1" />
-		<Unit filename=".gitignore" />
+		<Unit filename=".gitignore">
+			<Option target="Debug" />
+			<Option target="Release" />
+			<Option target="Release_Scalar" />
+			<Option target="Release_SSE2" />
+			<Option target="Release_Scalar64" />
+			<Option target="Release_AVX64" />
+			<Option target="Release_AVX64ASSEMBLY" />
+			<Option target="Release_SSE2ASSEMBLY" />
+			<Option target="Release_AVX64_OpenMP" />
+			<Option target="Release_SSE2_OpenMP" />
+		</Unit>
 		<Unit filename="include/compare.h">
 			<Option glob="316380917" />
 			<Option target="Debug" />
 			<Option target="Release_Scalar" />
 			<Option target="Release_SSE2" />
 			<Option target="Release_SSE2ASSEMBLY" />
+			<Option target="Release_SSE2_OpenMP" />
 		</Unit>
 		<Unit filename="include/compare64.h">
 			<Option glob="316380917" />
@@ -102,21 +163,72 @@
 			<Option target="Release_AVX64" />
 			<Option target="Release" />
 			<Option target="Release_AVX64ASSEMBLY" />
+			<Option target="Release_AVX64_OpenMP" />
 		</Unit>
 		<Unit filename="include/config.h">
 			<Option glob="316380917" />
+			<Option target="Debug" />
+			<Option target="Release" />
+			<Option target="Release_Scalar" />
+			<Option target="Release_SSE2" />
+			<Option target="Release_Scalar64" />
+			<Option target="Release_AVX64" />
+			<Option target="Release_AVX64ASSEMBLY" />
+			<Option target="Release_SSE2ASSEMBLY" />
+			<Option target="Release_AVX64_OpenMP" />
+			<Option target="Release_SSE2_OpenMP" />
 		</Unit>
 		<Unit filename="include/distance.h">
 			<Option glob="316380917" />
+			<Option target="Debug" />
+			<Option target="Release" />
+			<Option target="Release_Scalar" />
+			<Option target="Release_SSE2" />
+			<Option target="Release_Scalar64" />
+			<Option target="Release_AVX64" />
+			<Option target="Release_AVX64ASSEMBLY" />
+			<Option target="Release_SSE2ASSEMBLY" />
+			<Option target="Release_AVX64_OpenMP" />
+			<Option target="Release_SSE2_OpenMP" />
 		</Unit>
 		<Unit filename="include/index.h">
 			<Option glob="316380917" />
+			<Option target="Debug" />
+			<Option target="Release" />
+			<Option target="Release_Scalar" />
+			<Option target="Release_SSE2" />
+			<Option target="Release_Scalar64" />
+			<Option target="Release_AVX64" />
+			<Option target="Release_AVX64ASSEMBLY" />
+			<Option target="Release_SSE2ASSEMBLY" />
+			<Option target="Release_AVX64_OpenMP" />
+			<Option target="Release_SSE2_OpenMP" />
 		</Unit>
 		<Unit filename="include/matrix.h">
 			<Option glob="316380917" />
+			<Option target="Debug" />
+			<Option target="Release" />
+			<Option target="Release_Scalar" />
+			<Option target="Release_SSE2" />
+			<Option target="Release_Scalar64" />
+			<Option target="Release_AVX64" />
+			<Option target="Release_AVX64ASSEMBLY" />
+			<Option target="Release_SSE2ASSEMBLY" />
+			<Option target="Release_AVX64_OpenMP" />
+			<Option target="Release_SSE2_OpenMP" />
 		</Unit>
 		<Unit filename="include/quantization.h">
 			<Option glob="316380917" />
+			<Option target="Debug" />
+			<Option target="Release" />
+			<Option target="Release_Scalar" />
+			<Option target="Release_SSE2" />
+			<Option target="Release_Scalar64" />
+			<Option target="Release_AVX64" />
+			<Option target="Release_AVX64ASSEMBLY" />
+			<Option target="Release_SSE2ASSEMBLY" />
+			<Option target="Release_AVX64_OpenMP" />
+			<Option target="Release_SSE2_OpenMP" />
 		</Unit>
 		<Unit filename="include/query.h">
 			<Option glob="316380917" />
@@ -124,6 +236,7 @@
 			<Option target="Release_Scalar" />
 			<Option target="Release_SSE2" />
 			<Option target="Release_SSE2ASSEMBLY" />
+			<Option target="Release_SSE2_OpenMP" />
 		</Unit>
 		<Unit filename="include/query64.h">
 			<Option glob="316380917" />
@@ -131,6 +244,7 @@
 			<Option target="Release_Scalar64" />
 			<Option target="Release_AVX64" />
 			<Option target="Release_AVX64ASSEMBLY" />
+			<Option target="Release_AVX64_OpenMP" />
 		</Unit>
 		<Unit filename="src/compare.c">
 			<Option compilerVar="CC" />
@@ -138,6 +252,7 @@
 			<Option target="Release_Scalar" />
 			<Option target="Release_SSE2" />
 			<Option target="Release_SSE2ASSEMBLY" />
+			<Option target="Release_SSE2_OpenMP" />
 		</Unit>
 		<Unit filename="src/compare64.c">
 			<Option compilerVar="CC" />
@@ -145,9 +260,20 @@
 			<Option target="Release_AVX64" />
 			<Option target="Release" />
 			<Option target="Release_AVX64ASSEMBLY" />
+			<Option target="Release_AVX64_OpenMP" />
 		</Unit>
 		<Unit filename="src/config.c">
 			<Option compilerVar="CC" />
+			<Option target="Debug" />
+			<Option target="Release" />
+			<Option target="Release_Scalar" />
+			<Option target="Release_SSE2" />
+			<Option target="Release_Scalar64" />
+			<Option target="Release_AVX64" />
+			<Option target="Release_AVX64ASSEMBLY" />
+			<Option target="Release_SSE2ASSEMBLY" />
+			<Option target="Release_AVX64_OpenMP" />
+			<Option target="Release_SSE2_OpenMP" />
 		</Unit>
 		<Unit filename="src/distance.c">
 			<Option compilerVar="CC" />
@@ -161,21 +287,35 @@
 		<Unit filename="src/distance32ASSEMBLY.c">
 			<Option compilerVar="CC" />
 			<Option target="Release_SSE2ASSEMBLY" />
+			<Option target="Release_SSE2_OpenMP" />
 		</Unit>
 		<Unit filename="src/distance64ASSEMBLY.c">
 			<Option compilerVar="CC" />
 			<Option target="Release_AVX64ASSEMBLY" />
+			<Option target="Release_AVX64_OpenMP" />
 		</Unit>
 		<Unit filename="src/distance_avx2.S">
 			<Option target="Release_Scalar64" />
 			<Option target="Release_AVX64ASSEMBLY" />
+			<Option target="Release_AVX64_OpenMP" />
 		</Unit>
 		<Unit filename="src/distance_sse2.S">
 			<Option weight="20" />
 			<Option target="Release_SSE2ASSEMBLY" />
+			<Option target="Release_SSE2_OpenMP" />
 		</Unit>
 		<Unit filename="src/index.c">
 			<Option compilerVar="CC" />
+			<Option target="Debug" />
+			<Option target="Release" />
+			<Option target="Release_Scalar" />
+			<Option target="Release_SSE2" />
+			<Option target="Release_Scalar64" />
+			<Option target="Release_AVX64" />
+			<Option target="Release_AVX64ASSEMBLY" />
+			<Option target="Release_SSE2ASSEMBLY" />
+			<Option target="Release_AVX64_OpenMP" />
+			<Option target="Release_SSE2_OpenMP" />
 		</Unit>
 		<Unit filename="src/main.c">
 			<Option compilerVar="CC" />
@@ -186,6 +326,7 @@
 		<Unit filename="src/main32ASSEMBLY.c">
 			<Option compilerVar="CC" />
 			<Option target="Release_SSE2ASSEMBLY" />
+			<Option target="Release_SSE2_OpenMP" />
 		</Unit>
 		<Unit filename="src/main64.c">
 			<Option compilerVar="CC" />
@@ -196,12 +337,37 @@
 		<Unit filename="src/main64ASSEMBLY.c">
 			<Option compilerVar="CC" />
 			<Option target="Release_AVX64ASSEMBLY" />
+			<Option target="Release_AVX64_OpenMP" />
+		</Unit>
+		<Unit filename="src/mainReport.c">
+			<Option compilerVar="CC" />
+			<Option target="Benchmark_Report" />
 		</Unit>
 		<Unit filename="src/matrix.c">
 			<Option compilerVar="CC" />
+			<Option target="Debug" />
+			<Option target="Release" />
+			<Option target="Release_Scalar" />
+			<Option target="Release_SSE2" />
+			<Option target="Release_Scalar64" />
+			<Option target="Release_AVX64" />
+			<Option target="Release_AVX64ASSEMBLY" />
+			<Option target="Release_SSE2ASSEMBLY" />
+			<Option target="Release_AVX64_OpenMP" />
+			<Option target="Release_SSE2_OpenMP" />
 		</Unit>
 		<Unit filename="src/quantization.c">
 			<Option compilerVar="CC" />
+			<Option target="Debug" />
+			<Option target="Release" />
+			<Option target="Release_Scalar" />
+			<Option target="Release_SSE2" />
+			<Option target="Release_Scalar64" />
+			<Option target="Release_AVX64" />
+			<Option target="Release_AVX64ASSEMBLY" />
+			<Option target="Release_SSE2ASSEMBLY" />
+			<Option target="Release_AVX64_OpenMP" />
+			<Option target="Release_SSE2_OpenMP" />
 		</Unit>
 		<Unit filename="src/query.c">
 			<Option compilerVar="CC" />
@@ -209,6 +375,7 @@
 			<Option target="Release_Scalar" />
 			<Option target="Release_SSE2" />
 			<Option target="Release_SSE2ASSEMBLY" />
+			<Option target="Release_SSE2_OpenMP" />
 		</Unit>
 		<Unit filename="src/query64.c">
 			<Option compilerVar="CC" />
@@ -216,6 +383,7 @@
 			<Option target="Release_Scalar64" />
 			<Option target="Release_AVX64" />
 			<Option target="Release_AVX64ASSEMBLY" />
+			<Option target="Release_AVX64_OpenMP" />
 		</Unit>
 		<Extensions />
 	</Project>
