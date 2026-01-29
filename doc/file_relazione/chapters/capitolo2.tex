@@ -1,2 +1,65 @@
 \maketitle
-\chapter{Le ottimizzazioni richieste}
+\chapter{Ottimizzazioni richieste}
+
+\section{Obiettivi del progetto}
+L'obiettivo primario dell'attività progettuale risiede nello sviluppo di un'implementazione ad alte prestazioni dell'algoritmo di ricerca dei $K$ vicini ($K$-Nearest Neighbors). Data la complessità computazionale intrinseca del problema, pari a $O(n \cdot D)$, il progetto si focalizza sul superamento dei colli di bottiglia del codice seriale attraverso l'uso di tecniche di ottimizzazione hardware-aware, sfruttando il calcolo vettoriale (SIMD) e il parallelismo multi-thread.
+
+\section{Varianti architetturali e requisiti di precisione}
+La traccia impone la realizzazione di due soluzioni distinte, differenziate per architettura di riferimento e precisione numerica, al fine di confrontare l'impatto delle diverse estensioni del set di istruzioni x86.
+
+\subsection{Versione 32-bit SSE (Single Precision)}
+Questa versione è ottimizzata per l'esecuzione in ambienti a 32 bit, privilegiando la velocità di calcolo su dati a precisione singola.
+\begin{itemize}
+    \item \textbf{Precisione:} Utilizzo del tipo di dato \texttt{float} (32 bit).
+    \item \textbf{Set di istruzioni:} Sfruttamento del repertorio \textbf{SSE} (\textit{Streaming SIMD Extensions}).
+    \item \textbf{Parallelismo hardware:} Impiego dei registri \texttt{XMM} da 128 bit, che consentono di processare simultaneamente 4 componenti \texttt{float}.
+\end{itemize}
+
+\subsection{Versione 64-bit AVX (Double Precision)}
+La versione a 64 bit è orientata a scenari che richiedono elevata accuratezza numerica, sfruttando le capacità delle estensioni vettoriali più moderne.
+\begin{itemize}
+    \item \textbf{Precisione:} Utilizzo del tipo di dato \texttt{double} (64 bit).
+    \item \textbf{Set di istruzioni:} Impiego del repertorio \textbf{AVX} (\textit{Advanced Vector Extensions}).
+    \item \textbf{Parallelismo hardware:} Utilizzo dei registri \texttt{YMM} da 256 bit. Nonostante la precisione doppia, l'ampiezza del registro permette l'elaborazione di 4 elementi \texttt{double} in parallelo.
+\end{itemize}
+
+\section{Ottimizzazioni di basso livello e gestione dati}
+Per garantire l'efficienza massima nelle routine Assembly, sono state adottate strategie specifiche di gestione della memoria e delle istruzioni.
+
+\subsection{Gestione della dimensionalità e Cleanup Loop}
+Un aspetto critico affrontato nelle versioni ottimizzate riguarda la gestione della dimensionalità $D$. Poiché non è garantito che $D$ sia un multiplo esatto della capacità dei registri (4 elementi per ciclo), è stata implementata una sezione di \textit{cleanup} scalare. Al termine del loop principale vettorializzato, un ciclo sequenziale processa le componenti rimanenti, garantendo l'accuratezza del calcolo per qualsiasi valore di $D$ ed evitando accessi a memoria non allocata.
+
+\subsection{Ottimizzazione degli accessi e allineamento}
+L'efficienza SIMD è strettamente legata alla modalità di caricamento dei dati. L'allineamento a 16 byte (SSE) e 32 byte (AVX) non è solo un vincolo, ma una scelta per abilitare le istruzioni di \textit{fast loading} come \texttt{MOVAPS} e \texttt{VMOVAPD}. Questo previene le penalità dovute ai \textit{misaligned accesses}, massimizzando il throughput dei dati verso la CPU.
+
+\subsection{Istruzioni hardware specializzate}
+Le implementazioni Assembly sfruttano istruzioni dedicate per ridurre i cicli di clock:
+\begin{itemize}
+    \item \textbf{Riduzione Orizzontale:} L'uso di \texttt{HADDPS} (SSE) consente di sommare le componenti interne a un registro con un'unica operazione, velocizzando la finalizzazione della distanza.
+    \item \textbf{Population Count:} Nella distanza approssimata, l'istruzione \texttt{POPCNT} sostituisce interi cicli di confronto, contando i bit impostati a 1 nelle maschere binarie in un singolo ciclo hardware.
+\end{itemize}
+
+\section{Parallelismo di alto livello con OpenMP}
+Per la versione AVX, è richiesta l'integrazione di \textbf{OpenMP}. Mentre la vettorializzazione accelera il calcolo della singola distanza (parallelismo a livello di dati), OpenMP introduce il parallelismo a livello di thread. La strategia prevede la distribuzione del loop delle query tra i vari core della CPU, permettendo di processare più punti contemporaneamente e sfruttando appieno l'architettura multi-core.
+
+\section{Sintesi tecnica delle configurazioni}
+La tabella seguente riassume le specifiche tecniche e le differenze hardware tra le implementazioni richieste.
+
+\begin{table}[h!]
+\centering
+\small
+\renewcommand{\arraystretch}{1.5}
+\begin{tabularx}{\textwidth}{|l|X|X|}
+\hline
+
+\textbf{Caratteristica} & \textbf{Versione SSE} & \textbf{Versione AVX} \\ \hline
+\textbf{Precisione} & Single Precision (32-bit) & Double Precision (64-bit) \\ \hline
+\textbf{Tipo di dato C} & \texttt{float} & \texttt{double} \\ \hline
+\textbf{Registro SIMD} & \texttt{XMM} (128 bit) & \texttt{YMM} (256 bit) \\ \hline
+\textbf{Allineamento} & 16 Byte & 32 Byte \\ \hline
+\textbf{Istruzioni Chiave} & \texttt{MOVAPS, HADDPS, POPCNT} & \texttt{VMOVAPD, VCMPPD, POPCNT} \\ \hline
+\textbf{Parallelismo} & Data-level (SIMD) & Data-level + Thread-level (OpenMP) \\ \hline
+\end{tabularx}
+\caption{Confronto tecnico tra le architetture target del progetto.}
+\end{table}
+
