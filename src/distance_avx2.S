@@ -3,11 +3,11 @@
 .globl approximate_distance_avx2_asm
 
 # Windows x64 ABI (MinGW):
-# RCX = vp
-# RDX = vn
-# R8  = wp
-# R9  = wn
-# 5° arg (D) è sullo stack a [RSP + 40] (dopo la shadow area del chiamante)
+# RCX = vp valori positivi del primo vettore (query)
+# RDX = vn valori negativi del primo vettore (query)
+# R8  = wp valori positivi del secondo vettore (dataset)
+# R9  = wn valori negativi del secondo vettore (dataset)
+# (D) = sullo stack a [RSP + 40] (dopo la shadow area del chiamante) è la dimensionalità dei vettori
 
 approximate_distance_avx2_asm:
     # --- PROLOGUE: SALVATAGGIO REGISTRI NON-VOLATILI (ABI WINDOWS) ---
@@ -25,55 +25,61 @@ approximate_distance_avx2_asm:
     vmovdqu xmmword ptr [rsp + 64], xmm15
 
     # -------------------------------------------------------------
-    # CORPO DELLA FUNZIONE (INVARIATO, MA ORA SICURO)
+    # CORPO DELLA FUNZIONE
     # -------------------------------------------------------------
 
     # D in r10. Nota: ora RSP è cambiato di 88 byte, quindi l'argomento
     # che era a [rsp+40] ora è a [rsp + 40 + 88] = [rsp + 128]
+
     mov r10, qword ptr [rsp+128]
 
     # Se D == 256: percorso super-ottimizzato
-    cmp r10, 256
+    cmp r10, 256  #faccio una compare
     je  .d256
 
-    # --- Percorso Generico ---
-    vpxor ymm8,  ymm8,  ymm8    # acc_pp
-    vpxor ymm9,  ymm9,  ymm9    # acc_nn
-    vpxor ymm10, ymm10, ymm10   # acc_pn
-    vpxor ymm11, ymm11, ymm11   # acc_np
-    vpxor ymm15, ymm15, ymm15   # zero
+    # --- Percorso Generico -------------------------------------------------------
+    #faccio l'operazione xor su uno stesso registro per mettere il registro a 0. Lo faccio su tutti i registri
+    vpxor ymm8,  ymm8,  ymm8    # ymm8 = acc_pp (v+ * w+)
+    vpxor ymm9,  ymm9,  ymm9    # ymm9 = acc_nn (v- * w-)
+    vpxor ymm10, ymm10, ymm10   # ymm10 = acc_pn (v+ * w-)
+    vpxor ymm11, ymm11, ymm11   # ymm11 = acc_np (v- * w+)
+    vpxor ymm15, ymm15, ymm15   # ymm15 = costante zero
 
-    mov r11, r10
+    mov r11, r10 # Copio D in r11
     shr r11, 5  # blocks = D / 32
-    test r11, r11
+    test r11, r11 #se D<32 vado direttamente alla gestione dei resti
     jz .reduce_generic
 
 .loop_generic:
-    vmovdqu ymm0, ymmword ptr [rcx]
-    vmovdqu ymm1, ymmword ptr [rdx]
-    vmovdqu ymm2, ymmword ptr [r8]
-    vmovdqu ymm3, ymmword ptr [r9]
+# Carico i blocchi di bit (32 byte alla volta)
+    vmovdqu ymm0, ymmword ptr [rcx] #ymm0 = v+
+    vmovdqu ymm1, ymmword ptr [rdx] #ymm1 = v-
+    vmovdqu ymm2, ymmword ptr [r8] #ymm2 = w+
+    vmovdqu ymm3, ymmword ptr [r9] #ymm3 = w-
 
-    # pp
-    vpand   ymm4, ymm0, ymm2
-    vpsadbw ymm4, ymm4, ymm15
-    vpaddq  ymm8, ymm8, ymm4
+AND logico per trovare i bit comuni e PSADBW per contarli
 
-    # nn
+    # v+ AND w+ (pp)
+    vpand   ymm4, ymm0, ymm2  # Trova i bit a 1 comuni
+    vpsadbw ymm4, ymm4, ymm15   # Conta i bit impostati (somma differenze assolute con zero)
+    vpaddq  ymm8, ymm8, ymm4    # Accumulo in ymm8
+
+    # v- AND w- (nn)
     vpand   ymm4, ymm1, ymm3
     vpsadbw ymm4, ymm4, ymm15
     vpaddq  ymm9, ymm9, ymm4
 
-    # pn
+    # v+ AND w- (pn)
     vpand   ymm4, ymm0, ymm3
     vpsadbw ymm4, ymm4, ymm15
     vpaddq  ymm10, ymm10, ymm4
 
-    # np
+    # v- AND w+ (np)
     vpand   ymm4, ymm1, ymm2
     vpsadbw ymm4, ymm4, ymm15
     vpaddq  ymm11, ymm11, ymm4
 
+    #Avanzo i puntatori degli indirizzi di 32 byte
     add rcx, 32
     add rdx, 32
     add r8,  32
@@ -82,34 +88,24 @@ approximate_distance_avx2_asm:
     jnz .loop_generic
 
 .reduce_generic:
-    # Per la riduzione usiamo lo spazio stack libero (la shadow area sopra RSP)
-    # Ma attenzione: RSP punta ai nostri salvataggi. Usiamo una zona sicura
-    # sotto i salvataggi? No, usiamo i registri GPR volatili R11, RAX o stack temp.
-    # Useremo [rsp+80] (ultimi 8 byte liberi del nostro frame) o registri.
-
-    # Semplifichiamo: usiamo RAX e R11 per accumulare temporaneamente,
-    # poi scriviamo il risultato finale.
-
-    # Ma aspetta: il codice originale usava [rsp+8]..[rsp+32] per appoggiare i risultati.
-    # Quello era lo stack DEL CHIAMANTE (Shadow Space).
-    # Con RSP spostato, [rsp+8] punta ai nostri salvataggi XMM! NON POSSIAMO SCRIVERE LI.
-
-    # Dobbiamo calcolare tutto nei registri GPR.
+    # Dove salvare i dati temporanei per la riduzione?
+    # Non può usare la "Shadow Area" originale [RSP+8] perché ora lì ci sono i salvataggi XMM (I registri non volatili che stiamo usando e che non vanno sovrascritti).
+    # Si decide di usare i registri GPR (General Purpose Registers) volatili come RAX e R11 per non toccare lo stack.
 
     # ---- pp (ymm8) ----
-    vextracti128 xmm0, ymm8, 0
-    vextracti128 xmm1, ymm8, 1
-    paddq xmm0, xmm1
-    movq r11, xmm0
-    psrldq xmm0, 8
-    movq rax, xmm0
+    vextracti128 xmm0, ymm8, 0 # Estraggo i 128 bit bassi di YMM8 e li metto in xmm0
+    vextracti128 xmm1, ymm8, 1 # Estraggo i 128 bit alti di YMM8 e li metto in xmm1
+    paddq xmm0, xmm1 #sommo le due metà a 64 bit
+    movq r11, xmm0  # Sposto i primi 64 bit del risultato in R11
+    psrldq xmm0, 8  # Sposto i restanti 64 bit nella parte bassa di XMM0
+    movq rax, xmm0 # Li sposto in RAX
     add r11, rax    # r11 = pp totale
 
-    # ---- nn (ymm9) ----
+    # ---- nn (ymm9) ---- faccio le stesse operazioni di prima
     vextracti128 xmm0, ymm9, 0
     vextracti128 xmm1, ymm9, 1
     paddq xmm0, xmm1
-    movq r12, xmm0  # uso r12 (non-volatile, devo salvarlo? SI. Windows ABI)
+    movq r12, xmm0
     # Risparmiamo r12. Usiamo il risultato direttamente.
     # Calcoliamo (pp + nn - pn - np) in un unico registro RAX man mano.
 
@@ -130,7 +126,7 @@ approximate_distance_avx2_asm:
     vpaddq ymm10, ymm10, ymm11
 
     # res = (pp+nn) - (pn+np)
-    vpsubq ymm8, ymm8, ymm10
+    vpsubq ymm8, ymm8, ymm10  #Ho eseguito le varie operazioni
 
     # Ora riduciamo ymm8 (che contiene il delta finale)
     vextracti128 xmm0, ymm8, 0
@@ -141,12 +137,13 @@ approximate_distance_avx2_asm:
     movq r11, xmm0
     add rax, r11  # RAX contiene il risultato parziale dai blocchi
 
-    # Resto (D % 32)
+    # Resto (D % 32) Calcolo quanti byte rimangono (resto della divisione per 32)
     mov r11, r10
     and r11, 31
     jz  .epilogue_restore
 
 .rem_loop:
+# Calcolo scalare dei 4 termini per i byte rimanenti
     # pp: (vp & wp)
     mov  r10b, byte ptr [rcx]
     and  r10b, byte ptr [r8]
@@ -174,7 +171,7 @@ approximate_distance_avx2_asm:
     inc rcx
     inc rdx
     inc r8
-    inc r9
+    inc r9 #incremento i registri
     dec r11
     jnz .rem_loop
 
@@ -182,13 +179,16 @@ approximate_distance_avx2_asm:
 
 
 .d256:
+    # Implementazione tramite Loop Unrolling: calcolo manuale di 8 blocchi da 32 byte senza salti intermedi
+
     vpxor ymm8,  ymm8,  ymm8
     vpxor ymm9,  ymm9,  ymm9
     vpxor ymm10, ymm10, ymm10
     vpxor ymm11, ymm11, ymm11
     vpxor ymm15, ymm15, ymm15
 
-    # Srotolamento manuale (invariato)
+    # Srotolamento manuale (invariato) per offset 0, 32, 64, 96, 128, 160, 192, 224]
+
     # Offset 0
     vmovdqu ymm0, ymmword ptr [rcx+0]
     vmovdqu ymm1, ymmword ptr [rdx+0]
@@ -206,11 +206,6 @@ approximate_distance_avx2_asm:
     vpand ymm4, ymm1, ymm2
     vpsadbw ymm4, ymm4, ymm15
     vpaddq ymm11, ymm11, ymm4
-
-    # Ripeti per offset 32..224 (qui condensato per brevità,
-    # ma nel tuo file tieni tutti gli 8 blocchi come prima)
-    # ... (copia qui i blocchi dal tuo file originale per 32, 64, 96, 128, 160, 192, 224) ...
-    # Per brevità qui metto solo la logica di calcolo finale che è ottimizzata
 
     # Offset 32
     vmovdqu ymm0, ymmword ptr [rcx+32]
@@ -338,7 +333,7 @@ approximate_distance_avx2_asm:
     vpsadbw ymm4, ymm4, ymm15
     vpaddq ymm11, ymm11, ymm4
 
-    # Calcolo finale ottimizzato (pp+nn) - (pn+np)
+    # Calcolo finale ottimizzato (pp+nn) - (pn+np) uguale a quello di prima
     vpaddq ymm8, ymm8, ymm9
     vpaddq ymm10, ymm10, ymm11
     vpsubq ymm8, ymm8, ymm10
@@ -352,7 +347,8 @@ approximate_distance_avx2_asm:
     add rax, r11
 
 .epilogue_restore:
-    # --- EPILOGUE: RIPRISTINO REGISTRI ---
+    # --- EPILOGO: RIPRISTINO REGISTRI ---
+    # Ripristino i registri originali dallo stack e dealloco lo spazio
     vmovdqu xmm8,  xmmword ptr [rsp + 0]
     vmovdqu xmm9,  xmmword ptr [rsp + 16]
     vmovdqu xmm10, xmmword ptr [rsp + 32]
@@ -361,5 +357,5 @@ approximate_distance_avx2_asm:
 
     add rsp, 88
 
-    vzeroupper
-    ret
+    vzeroupper # Pulisce lo stato dei registri YMM
+    ret # Ritorna RAX (distanza approssimata finale) al chiamante C.
