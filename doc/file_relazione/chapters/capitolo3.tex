@@ -26,7 +26,7 @@ Ci siamo poi occupati di andare a definire diversi target di compilazione: Relea
 I file distance.c e quantization.c fungono da strato di astrazione. Essi contengono le versioni scalari scritte in C, utilizzate come riferimento per la validazione dei risultati (baseline), e le dichiarazioni delle funzioni extern implementate in Assembly. Questo approccio modulare permette al compilatore di linkare le routine ottimizzate solo quando il target specifico lo richiede, garantendo che la versione a 32 bit float non venga inquinata da logiche a 64 bit double, e viceversa. Tale distinzione è fondamentale per testare accuratamente lo speedup ottenuto attraverso la vettorizzazione rispetto al codice sequenziale puro.
 
 \section{Vettorizzazione e calcolo parallelo nei registri SIMD}
-Analizzando i file quantpivot32.nasm e quantpivot64.nasm, emerge chiaramente come il calcolo della distanza euclidea sia stato trasformato da una sequenza di operazioni scalari a un flusso vettorializzato.
+Analizzando i file distance\_sse2.S e distance\_avx2.S, emerge chiaramente come il calcolo della distanza euclidea sia stato trasformato da una sequenza di operazioni scalari a un flusso vettorializzato.
 
 Invece di iterare singolarmente su ogni dimensione $D$ dei vettori, il codice sfrutta i registri XMM (per la versione SSE a 32 bit) e YMM (per la versione AVX a 64 bit).
 
@@ -68,15 +68,26 @@ Il risultato di questo confronto è una maschera di bit che viene poi salvata ne
 
 Come spiegato precedentemente, ora è il momento del calcolo della distanza approssimata $\tilde{d}$, che serve per risparmiare calcoli e quindi potenza computazionale ed evitare di calcolare la distanza matematicamente corretta per ogni vettore. 
 
-Una volta ottenute le maschere binarie per la query e per il punto del dataset, il prodotto scalare tra vettori binari viene risolto tramite operazioni logiche AND seguite dall'istruzione POPCNT (Population Count). Quest'ultima istruzione hardware conta il numero di bit impostati a 1 in un registro in un singolo ciclo di clock. 
+Una volta ottenute le maschere binarie per la query e per il punto del dataset, il prodotto scalare tra vettori binari viene risolto tramite operazioni logiche AND seguite dall'istruzione PSADBW.  
+
+Per il calcolo della distanza approssimata $\tilde{d}(v,w)$, l'implementazione Assembly non si affida esclusivamente all'istruzione POPCNT, che potrebbe non essere presente su tutte le architetture target. 
+
+Si è scelto quindi di utilizzare l'istruzione PSADBW (Sum of Absolute Differences of Bytes).Il processo avviene in tre step vettoriali:
+\begin{enumerate}
+\item Si esegue un PAND bit-a-bit tra le maschere di quantizzazione.
+\item Si utilizza una maschera costante di '1' (caricata nel registro xmm6 in SSE2 o ymm15 in AVX2) per isolare i bit attivi.
+\item L'istruzione PSADBW somma orizzontalmente i byte, effettuando di fatto un population count vettoriale estremamente veloce senza la necessità di iterazioni scalari.
+\end{enumerate}
 
 Questa scelta implementativa permette di sostituire centinaia di moltiplicazioni e somme in virgola mobile con poche operazioni bit-a-bit, accelerando la stima della distanza prima di decidere se procedere o meno con il calcolo euclideo esatto.
 
 \section{Gestione dei buffer temporanei}
 
-All'interno del file quantpivot32.nasm si può notare che la gestione di queste maschere binarie richiede memoria temporanea supplementare. Per evitare la frammentazione della memoria o rallentamenti dovuti a continue chiamate di sistema, il codice utilizza le macro getmem e fremem.
+Un aspetto critico dell'analisi riguarda il rispetto della Windows x64 Call Convention (ABI). Come si osserva nei file distance\_sse2.S e distance\_avx2.S, il codice Assembly deve preservare i registri definiti non-volatili dal sistema operativo (da XMM6 a XMM15).
 
-Queste macro agiscono come un'interfaccia sicura verso le funzioni di gestione dei blocchi di memoria definite in C e sono anche progettate per rispettare rigorosamente le convenzioni di chiamata (Application Binary Interface - ABI). 
+All’ingresso delle routine, il codice esegue un prologo rigoroso: alloca spazio sullo stack e salva i registri utilizzati (come XMM8-XMM11). 
+
+Prima del ritorno al chiamante, nell'epilogo, tali registri vengono ripristinati ai loro valori originali. Questo garantisce la stabilità dell'intero applicativo, evitando che la sovrascrittura accidentale di registri critici provochi crash, specialmente durante l'esecuzione parallela gestita da OpenMP."
 
 All'ingresso della routine, il codice Assembly si occupa di preservare lo stato dei registri "callee-saved" (come ESI, EDI e EBX nella versione a 32 bit), ripristinandoli correttamente prima del ritorno al chiamante. Questo garantisce la stabilità dell'intero applicativo, evitando che la sovrascrittura accidentale di registri critici durante l'allocazione della memoria provochi crash al ritorno della funzione.
 
