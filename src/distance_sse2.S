@@ -3,6 +3,7 @@
 .section .rodata
 .p2align 4
 ones16:
+ # Definizione di una costante di 16 byte tutti impostati a 1, usata per il conteggio dei bit
     .byte 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
 
 .text
@@ -19,6 +20,7 @@ ones16:
 approximate_distance_sse2_asm:
     # --- PROLOGO: SALVATAGGIO REGISTRI NON-VOLATILI ---
     # Dobbiamo salvare XMM6, XMM7, XMM8, XMM9, XMM10, XMM11
+     # In Windows, i registri XMM6-XMM15 e R12-R15 devono essere preservati
     # 6 registri * 16 byte = 96 byte. Arrotondiamo a 104 per allineamento stack 16-byte.
     sub rsp, 104
 
@@ -29,9 +31,7 @@ approximate_distance_sse2_asm:
     movdqu xmmword ptr [rsp + 64], xmm10
     movdqu xmmword ptr [rsp + 80], xmm11
 
-    # Salviamo anche i GPR non volatili usati (R12-R15 erano già salvati nel tuo codice originale,
-    # ma ora l'offset dello stack per loro cambia se usiamo push/pop.
-    # Per semplicità, manteniamo il tuo stile push/pop DOPO il mio sub rsp).
+    # Salvataggio dei registri General Purpose (GPR) tramite push.
     push r12
     push r13
     push r14
@@ -39,30 +39,33 @@ approximate_distance_sse2_asm:
 
     # --- INIZIO LOGICA ---
     # Leggi D (offset 144 + 4*8 bytes di push = 176)
-    # Calcolo: 40 (shadow) + 104 (xmm save) + 32 (gpr save) = 176
+    # Calcolo: 40 (shadow) + 104 (xmm save) + 32 (gpr save) = 176. L'offset tiene conto di shadow space, XMM e push GPR.
+
     mov r10, qword ptr [rsp + 176]
 
     # Costanti:
     pxor xmm5, xmm5                                 # xmm5 = zero (volatile)
-    movdqu xmm6, xmmword ptr [rip + ones16]         # xmm6 = 1s (NON-volatile, salvato)
-    pcmpeqb xmm7, xmm7                              # xmm7 = FFs (NON-volatile, salvato)
+    movdqu xmm6, xmmword ptr [rip + ones16]         # xmm6 = 1s carica la maschera di 1
+    pcmpeqb xmm7, xmm7                              # xmm7 = crea un amschera di tutti i bit a 1
 
     # fast-path D == 256
-    cmp r10, 256
+    cmp r10, 256 #se la dimensione D è 256, usa la versione srotolata (unrolled).
     je  .d256
 
     # ---- generic path ----
-    pxor xmm8,  xmm8      # acc_pp
-    pxor xmm9,  xmm9      # acc_nn
-    pxor xmm10, xmm10     # acc_pn
-    pxor xmm11, xmm11     # acc_np
+    # Inizializzazione accumulatori a zero per i 4 termini della formula binaria
+    pxor xmm8,  xmm8      # acc_pp (v+ * w+)
+    pxor xmm9,  xmm9      # acc_nn (v- * w-)
+    pxor xmm10, xmm10     # acc_pn (v+ * w-)
+    pxor xmm11, xmm11     # acc_np (v- * w+)
 
     mov r11, r10
-    shr r11, 4            # blocks = D/16
+    shr r11, 4            # r11 = D / 16 (numero di blocchi da 16 byte/128 bit).
     test r11, r11
     jz .reduce_generic
 
 .loop_generic:
+# Caricamento dei dati dai puntatori (16 byte alla volta).
     movdqu xmm0, xmmword ptr [rcx]   # vp
     movdqu xmm1, xmmword ptr [rdx]   # vn
     movdqu xmm2, xmmword ptr [r8]    # wp
@@ -70,14 +73,15 @@ approximate_distance_sse2_asm:
 
     # ---- pp ----
     movdqa xmm4, xmm0
-    pand   xmm4, xmm2
-    pcmpeqb xmm4, xmm5
-    pxor    xmm4, xmm7
-    pand    xmm4, xmm6
-    psadbw  xmm4, xmm5
-    paddq   xmm8, xmm4
+    pand   xmm4, xmm2 # xmm4 = vp & wp (AND bit-a-bit)
+    # Trasformazione dei bit in valori sommabili (0 o 1 per byte):
+    pcmpeqb xmm4, xmm5  # Confronta con zero: FF se uguale, 00 se diverso.
+    pxor    xmm4, xmm7 # Inverte i bit (NOT): FF se bit era presente.
+    pand    xmm4, xmm6 # Maschera con 1: il byte diventa 01 se bit presente, 00 altrimenti
+    psadbw  xmm4, xmm5 # Somma orizzontale dei byte (Population Count SSE2).
+    paddq   xmm8, xmm4 # Accumulo nel totale pp.
 
-    # ---- nn ----
+    # ---- nn ---- stesse operazioni di prima
     movdqa xmm4, xmm1
     pand   xmm4, xmm3
     pcmpeqb xmm4, xmm5
@@ -104,6 +108,7 @@ approximate_distance_sse2_asm:
     psadbw  xmm4, xmm5
     paddq   xmm11, xmm4
 
+    # Aggiornamento puntatori (16 byte) e contatore.
     add rcx, 16
     add rdx, 16
     add r8,  16
@@ -112,6 +117,7 @@ approximate_distance_sse2_asm:
     jnz .loop_generic
 
 .reduce_generic:
+# Trasferimento dei valori dagli accumulatori XMM ai registri GPR (64-bit).
     # riduzione acc_pp -> rax
     movq rax, xmm8
     psrldq xmm8, 8
@@ -136,16 +142,18 @@ approximate_distance_sse2_asm:
     movq r11, xmm11
     add r14, r11         # np
 
-    # remainder (D % 16) scalare
+    # gestione del resto: remainder (D % 16) scalare
     mov r11, r10
     and r11, 15
     jz .final
 
 .rem_loop:
+# Calcolo scalare per gli ultimi byte rimanenti.
     # pp += ((vp & wp) != 0)
     mov al, byte ptr [rcx]
     and al, byte ptr [r8]
-    setne dl
+    setne dl # dl = 1 se il risultato AND non è zero.
+
     movzx r15, dl
     add rax, r15
 
@@ -185,8 +193,10 @@ approximate_distance_sse2_asm:
     jmp .epilogue
 
 # --------------------------
-# fast-path D == 256
+# fast-path D == 256 (LOOP UNROLLING)
 # --------------------------
+ # Versione srotolata 16 volte (16 * 16 byte = 256 byte) per eliminare i salti.
+    # La logica di calcolo è identica al loop generico ma ripetuta linearmente.
 .d256:
     pxor xmm8,  xmm8
     pxor xmm9,  xmm9
