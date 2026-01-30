@@ -42,6 +42,7 @@ Le implementazioni Assembly sfruttano istruzioni dedicate per ridurre i cicli di
 \section{Parallelismo di alto livello con OpenMP}
 Per la versione AVX, è richiesta l'integrazione di \textbf{OpenMP}. Mentre la vettorializzazione accelera il calcolo della singola distanza (parallelismo a livello di dati), OpenMP introduce il parallelismo a livello di thread. La strategia prevede la distribuzione del loop delle query tra i vari core della CPU, permettendo di processare più punti contemporaneamente e sfruttando appieno l'architettura multi-core.
 
+\newpage
 \section{Sintesi tecnica delle configurazioni}
 La tabella seguente riassume le specifiche tecniche e le differenze hardware tra le implementazioni richieste.
 
