@@ -22,7 +22,7 @@
 #include "quantization.h"
 
 // ---------------------------------------------
-// Funzione di utilità: millisecondi
+// Funzione tempo
 // ---------------------------------------------
 double ms(clock_t start, clock_t end) {
     return 1000.0 * (double)(end - start) / CLOCKS_PER_SEC;
@@ -129,7 +129,7 @@ int main(int argc, char **argv)
     printf("Tempo knn_query_all(): %.2f ms\n\n", ms(t2, t3));
 
     // -----------------------------------------------------
-    // CARICAMENTO RISULTATI UFFICIALI
+    // CARICAMENTO RISULTATI
     // -----------------------------------------------------
     MatrixI32 ref_ids = {0};
     MatrixF32 ref_dst = {0};
@@ -183,7 +183,7 @@ int main(int argc, char **argv)
     printf("=====================================\n\n");
 
     // -----------------------------------------------------
-    // CLEANUP MEMORIA
+    // PULIZIA MEMORIA
     // -----------------------------------------------------
     free_matrix_i32(&ref_ids);
     free_matrix_f32(&ref_dst);

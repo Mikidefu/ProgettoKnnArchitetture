@@ -11,7 +11,7 @@
 #include "quantization.h"
 
 // ---------------------------------------------
-// Utility: millisecondi
+// Funzione tempo
 // ---------------------------------------------
 static double ms(clock_t start, clock_t end) {
     return 1000.0 * (double)(end - start) / CLOCKS_PER_SEC;
@@ -99,7 +99,7 @@ int main(int argc, char **argv)
     printf("Tempo build_index(): %.2f ms\n\n", ms(t0, t1));
 
     // -----------------------------------------------------
-    // KNN QUERY
+    // KNN QUERY + BENCHMARK
     // -----------------------------------------------------
     int k = cfg.k;
 
@@ -122,7 +122,7 @@ int main(int argc, char **argv)
     printf("Tempo knn_query_all(): %.2f ms\n\n", ms(t2, t3));
 
     // -----------------------------------------------------
-    // CARICAMENTO RISULTATI UFFICIALI 64-BIT
+    // CARICAMENTO RISULTATI 64-BIT
     // -----------------------------------------------------
     MatrixI32 ref_ids = {0};
     MatrixF64 ref_dst = {0};
@@ -145,7 +145,7 @@ int main(int argc, char **argv)
     compare_results_f64(&qs, results, &ref_ids, &ref_dst, k);
 
     // -----------------------------------------------------
-    // BENCHMARK
+    // STAMPA RISULTATI BENCHMARK
     // -----------------------------------------------------
     printf("=====================================\n");
     printf("      BENCHMARK 64-bit ASM AVX2       \n");

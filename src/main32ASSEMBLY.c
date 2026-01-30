@@ -10,25 +10,21 @@
 #include "distance.h"
 #include "quantization.h"
 
-// Se OpenMP è attivo, includiamo la libreria
 #ifdef _OPENMP
 #include <omp.h>
 #endif
 
 // ---------------------------------------------
-// Utility: Calcolo Tempo (Ibrido CPU/Wall Clock)
+// Funzione tempo
 // ---------------------------------------------
 double calc_time_ms(clock_t c_start, clock_t c_end, double w_start, double w_end) {
 #ifdef _OPENMP
-    // OpenMP attivo: usiamo Wall Clock (tempo reale)
     return (w_end - w_start) * 1000.0;
 #else
-    // OpenMP spento: usiamo CPU Time
     return 1000.0 * (double)(c_end - c_start) / CLOCKS_PER_SEC;
 #endif
 }
 
-// Vecchia utility (rimasta per compatibilità se serve altrove)
 static double ms(clock_t start, clock_t end) {
     return 1000.0 * (double)(end - start) / CLOCKS_PER_SEC;
 }
@@ -120,7 +116,7 @@ int main(int argc, char **argv)
     printf("Tempo build_index(): %.2f ms\n\n", time_build);
 
     // -------------------------------------
-    // KNN QUERY
+    // KNN QUERY + BENCHMARK
     // -------------------------------------
     int k = cfg.k;
     Neighbor *results = malloc((size_t)qs.n * (size_t)k * sizeof(Neighbor));
@@ -158,7 +154,7 @@ int main(int argc, char **argv)
     MatrixI32 ref_ids = {0};
     MatrixF32 ref_dst = {0};
 
-    // Carichiamo i risultati di riferimento. Se fallisce, saltiamo solo il check.
+    // Carichiamo i risultati in caso di fallimento, saltiamo solo il check.
     int skip_check = 0;
     if (load_matrix_i32("data/results_ids_2000x8_k8_x64_32.ds2", &ref_ids) != 0) skip_check = 1;
     if (load_matrix_f32("data/results_dst_2000x8_k8_x64_32.ds2", &ref_dst) != 0) skip_check = 1;

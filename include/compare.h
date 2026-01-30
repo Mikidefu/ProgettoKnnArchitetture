@@ -4,7 +4,7 @@
 #include "matrix.h"
 #include "query.h"
 
-// Confronta i risultati calcolati (computed) con quelli di riferimento (ref_ids, ref_dist)
+// Confronta i risultati calcolati con quelli forniti
 void compare_results(const MatrixF32 *queries,
                      const Neighbor *computed,
                      const MatrixI32 *ref_ids,

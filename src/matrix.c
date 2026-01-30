@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-// Funzione interna per leggere header n,d
+// Lettura matrice
 static int read_header(FILE *f, uint32_t *n, uint32_t *d)
 {
     if (fread(n, sizeof(uint32_t), 1, f) != 1) return -1;

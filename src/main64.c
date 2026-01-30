@@ -10,23 +10,17 @@
 #include "distance.h"
 #include "quantization.h"
 
-// Includiamo la libreria OpenMP solo se il compilatore ha il flag attivo (-fopenmp)
 #ifdef _OPENMP
 #include <omp.h>
 #endif
 
 // ---------------------------------------------
-// Utility: Calcolo Tempo (Ibrido CPU/Wall Clock)
+// Funzione tempo
 // ---------------------------------------------
-// Questa funzione calcola la differenza in millisecondi scegliendo
-// il timer corretto in base alla modalità di compilazione.
 double calc_time_ms(clock_t c_start, clock_t c_end, double w_start, double w_end) {
 #ifdef _OPENMP
-    // Se OpenMP è attivo, il tempo rilevante è quello "dell'orologio a muro" (Wall Clock),
-    // perché clock() sommerebbe il tempo di tutti i core insieme.
     return (w_end - w_start) * 1000.0;
 #else
-    // Se siamo in sequenziale, usiamo il classico tempo di CPU.
     return 1000.0 * (double)(c_end - c_start) / CLOCKS_PER_SEC;
 #endif
 }
@@ -105,7 +99,6 @@ int main(int argc, char **argv)
     // -----------------------------------------------------
     printf("Costruzione indice (64-bit)...\n");
 
-    // Acquisizione timestamp INIZIALI
     clock_t c0 = clock();
     double w0 = 0;
     #ifdef _OPENMP
@@ -114,7 +107,6 @@ int main(int argc, char **argv)
 
     Index *idx = build_index_f64(&ds, cfg.h, cfg.x);
 
-    // Acquisizione timestamp FINALI
     clock_t c1 = clock();
     double w1 = 0;
     #ifdef _OPENMP
@@ -148,7 +140,6 @@ int main(int argc, char **argv)
 
     printf("Esecuzione K-NN (double) su %u query...\n", qs.n);
 
-    // Acquisizione timestamp INIZIALI
     clock_t c2 = clock();
     double w2 = 0;
     #ifdef _OPENMP
@@ -157,7 +148,6 @@ int main(int argc, char **argv)
 
     knn_query_all_f64(&ds, idx, &qs, k, cfg.x, results);
 
-    // Acquisizione timestamp FINALI
     clock_t c3 = clock();
     double w3 = 0;
     #ifdef _OPENMP
@@ -169,13 +159,13 @@ int main(int argc, char **argv)
     printf("Tempo knn_query_all(): %.2f ms\n\n", time_query);
 
     // -----------------------------------------------------
-    // CARICAMENTO RISULTATI UFFICIALI 64-BIT
+    // CARICAMENTO RISULTATI 64-BIT
     // -----------------------------------------------------
     MatrixI32 ref_ids = {0};
     MatrixF64 ref_dst = {0};
     int skip_check = 0;
 
-    // Tentiamo di caricare i file di riferimento. Se fallisce, saltiamo solo il confronto.
+    // Carichiamo i risultati, in caso di fallimento saltiamo solo il check.
     if (load_matrix_i32("data/results_ids_2000x8_k8_x64_64.ds2", &ref_ids) != 0) {
         printf("ATTENZIONE: File results_ids non trovato. Il confronto verrà saltato.\n");
         skip_check = 1;
@@ -217,7 +207,7 @@ int main(int argc, char **argv)
     printf("=====================================\n\n");
 
     // -----------------------------------------------------
-    // CLEANUP MEMORIA GENERALE
+    // PULIZIA MEMORIA
     // -----------------------------------------------------
     free(results);
     free_index(idx);

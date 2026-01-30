@@ -7,7 +7,7 @@
 
 // ------------------ SELEZIONE DEI PIVOT ----------------------
 //
-// j = 0..h-1
+// j = Da 0 ad h-1
 // pivot[j] = floor(n/h) * j
 //
 // --------------------------------------------------------------
@@ -19,10 +19,6 @@ static void select_pivots(size_t *pivot_ids, size_t n, int h) {
     }
 }
 
-// --------------------------------------------------------------
-// COSTRUZIONE DELL'INDICE COMPLETO
-// --------------------------------------------------------------
-
 Index *build_index(const MatrixF32 *ds, int h, int x) {
 
     if (!ds || h <= 0 || x <= 0) return NULL;
@@ -30,7 +26,7 @@ Index *build_index(const MatrixF32 *ds, int h, int x) {
     size_t n = ds->n;
     size_t D = ds->d;
 
-    // Alloco la struct Index
+    // Allocazione struttura Index
     Index *idx = calloc(1, sizeof(Index));
     if (!idx) return NULL;
 
@@ -38,7 +34,7 @@ Index *build_index(const MatrixF32 *ds, int h, int x) {
     idx->h = h;
     idx->D = D;
 
-    // Allocazione pivot_ids
+    // Allocazione pivot_ids (identificativi)
     idx->pivot_ids = malloc(h * sizeof(size_t));
     if (!idx->pivot_ids) {
         free(idx);
@@ -59,7 +55,7 @@ Index *build_index(const MatrixF32 *ds, int h, int x) {
         return NULL;
     }
 
-    // Quantizza tutto il dataset
+    // Quantizzazione dataset
     for (size_t i = 0; i < n; i++) {
         const float *row = &ds->data[i * D];
         uint8_t *vp = &idx->vp_all[i * D];
@@ -68,7 +64,7 @@ Index *build_index(const MatrixF32 *ds, int h, int x) {
         quantize_vector(row, vp, vn, D, x);
     }
 
-    // Allocazione quantizzazioni SOLO dei pivot
+    // Allocazione quantizzazioni dei SOLI pivot
     idx->vp_piv = malloc(h * D * sizeof(uint8_t));
     idx->vn_piv = malloc(h * D * sizeof(uint8_t));
 
@@ -100,7 +96,7 @@ Index *build_index(const MatrixF32 *ds, int h, int x) {
         return NULL;
     }
 
-    // Calcolo distanze approssimate ˜d(v,p)
+    // Calcolo distanze approssimate d(v,p)
     for (size_t i = 0; i < n; i++) {
 
         const uint8_t *vpi = &idx->vp_all[i * D];
@@ -152,7 +148,7 @@ Index *build_index_f64(const MatrixF64 *ds, int h, int x)
         return NULL;
     }
 
-    // Quantizza tutto il dataset (double)
+    // Quantizzazione dataset (double)
     for (size_t i = 0; i < n; i++) {
         const double *row = &ds->data[i * D];
         uint8_t *vp = &idx->vp_all[i * D];
@@ -204,7 +200,7 @@ Index *build_index_f64(const MatrixF64 *ds, int h, int x)
 
 
 // --------------------------------------------------------------
-// LIBERAZIONE MEMORIA
+// PULIZIA MEMORIA
 // --------------------------------------------------------------
 
 void free_index(Index *idx) {

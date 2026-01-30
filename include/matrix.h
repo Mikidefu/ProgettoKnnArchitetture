@@ -17,7 +17,7 @@ typedef struct {
     double  *data;
 } MatrixF64;
 
-// Matrice int32 (per gli indici dei risultati)
+// Matrice risultati indice int32
 typedef struct {
     uint32_t n;
     uint32_t d;

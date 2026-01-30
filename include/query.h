@@ -6,14 +6,13 @@
 #include "matrix.h"
 #include "index.h"
 
-// Struttura vicini con distanza approssimata + reale
+// Vicini distanza approssimata & distanza reale
 typedef struct {
     int   id;
     float dist_approx;
     float dist_real;
 } Neighbor;
 
-// KNN per UNA query
 void knn_query_single(const MatrixF32 *ds,
                       const Index *idx,
                       const float *q,
@@ -21,7 +20,6 @@ void knn_query_single(const MatrixF32 *ds,
                       int x,
                       Neighbor *neighbors);
 
-// KNN per TUTTE le query
 void knn_query_all(const MatrixF32 *ds,
                    const Index *idx,
                    const MatrixF32 *queries,

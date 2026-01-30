@@ -23,7 +23,6 @@ int approximate_distance(
 
 #if defined(USE_AVX)
     // ================== VERSIONE AVX2 (256 bit) ==================
-    // Richiede: -DUSE_AVX -mavx2
     size_t blocks = D / 32;   // 32 byte per vettore AVX
     size_t offset = blocks * 32;
 
@@ -77,7 +76,7 @@ int approximate_distance(
         acc_np = _mm256_add_epi16(acc_np, hi);
     }
 
-    // Somma orizzontale dei 16 valori 16-bit in ciascun accumulatore
+    // Somma i 16 valori 16-bit per ogni accumulatore
     int pp = 0, nn = 0, pn = 0, np = 0;
     uint16_t tmp16[16];
 
@@ -93,7 +92,7 @@ int approximate_distance(
     _mm256_storeu_si256((__m256i*)tmp16, acc_np);
     for (int i = 0; i < 16; ++i) np += tmp16[i];
 
-    // Resto scalare (se D non multiplo di 32)
+    // Resto scalare (se D non è multiplo di 32)
     for (size_t i = offset; i < D; i++) {
         if (vp[i] & wp[i]) pp++;
         if (vn[i] & wn[i]) nn++;
@@ -198,7 +197,7 @@ int approximate_distance(
 }
 
 // =====================================================================
-// Distanza euclidea reale float32 (scalare, basta così)
+// Distanza euclidea reale float32
 // =====================================================================
 
 float euclidean_distance(const float *a, const float *b, size_t D)
@@ -212,7 +211,7 @@ float euclidean_distance(const float *a, const float *b, size_t D)
 }
 
 // =====================================================================
-// Distanza euclidea reale float64 (AVX quando disponibile)
+// Distanza euclidea reale float64
 // =====================================================================
 
 double euclidean_distance_f64(const double *a, const double *b, size_t D)

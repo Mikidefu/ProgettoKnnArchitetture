@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Struttura di supporto
 typedef struct {
     float  value;
     size_t index;
@@ -63,7 +62,7 @@ void quantize_vector(const float *v, uint8_t *vp, uint8_t *vn, size_t D, int x)
     free(absvals);
 }
 
-// ====================== FLOAT64 ======================
+// ====================== FLOAT64 (Double) ======================
 
 void quantize_vector_f64(const double *v, uint8_t *vp, uint8_t *vn, size_t D, int x)
 {

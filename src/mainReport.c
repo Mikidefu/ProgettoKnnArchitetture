@@ -7,31 +7,30 @@
 // CONFIGURAZIONE PERCORSI E ARGOMENTI
 // --------------------------------------------------------
 
-// Struttura per definire un test
 typedef struct {
-    char *label;        // Nome visualizzato (es. "AVX2 + OpenMP")
-    char *exe_path;     // Percorso relativo dell'eseguibile
-    int   is_64bit;     // 1 se usa dataset 64-bit, 0 se usa 32-bit
+    char *label;        // Etichetta
+    char *exe_path;     // Percorso eseguibile
+    int   is_64bit;     // 1 --> 64-bit, 0 --> 32-bit
 } TestConfig;
 
 // Lista di tutte le configurazioni richieste
 TestConfig TESTS[] = {
-    // 32-BIT SCALAR / SSE
+    // 32-BIT SCALARE / SSE
     { "32-bit Scalar (C)",          "bin\\Release_Scalar\\progetto_knn.exe",        0 },
     { "32-bit SSE2 (Intrinsic)",    "bin\\Release_SSE2\\progetto_knn.exe",          0 },
     { "32-bit SSE2 (Assembly)",     "bin\\Release_SSE2ASSEMBLY\\progetto_knn.exe",  0 },
     { "32-bit SSE2 + OpenMP",       "bin\\Release_SSE2_OpenMP\\progetto_knn.exe",   0 },
 
-    // 64-BIT SCALAR / AVX
+    // 64-BIT SCALARE / AVX
     { "64-bit Scalar (C)",          "bin\\Release_Scalar64\\progetto_knn.exe",      1 },
     { "64-bit AVX2 (Intrinsic)",    "bin\\Release_AVX64\\progetto_knn.exe",         1 },
     { "64-bit AVX2 (Assembly)",     "bin\\Release_AVX64ASSEMBLY\\progetto_knn.exe", 1 },
     { "64-bit AVX2 + OpenMP",       "bin\\Release_AVX64_OpenMP\\progetto_knn.exe",  1 },
 
-    { NULL, NULL, 0 } // Terminatore
+    { NULL, NULL, 0 }
 };
 
-// Argomenti (modifica i path se necessario)
+// Argomenti
 const char *ARGS_32 = "-d data/dataset_2000x256_32.ds2 -q data/query_2000x256_32.ds2 -h 16 -k 8 -x 64";
 const char *ARGS_64 = "-d data/dataset_2000x256_64.ds2 -q data/query_2000x256_64.ds2 -h 16 -k 8 -x 64";
 
@@ -40,10 +39,10 @@ typedef struct {
     double build_time;
     double query_time;
     double total_time;
-    int    valid;       // 1 se il test è andato a buon fine
+    int    valid;
 } TestResult;
 
-TestResult results[20]; // Array per salvare i dati (max 20 test)
+TestResult results[20];
 
 // --------------------------------------------------------
 // FUNZIONI DI SUPPORTO
@@ -72,7 +71,7 @@ TestResult run_test(int test_idx) {
     // Costruisce il comando
     sprintf(command, ".\\%s %s", cfg.exe_path, args);
 
-    // Apre la pipe per leggere l'output del programma (Windows: _popen)
+    // Apre la pipe per leggere l'output del programma
     FILE *pipe = _popen(command, "r");
     if (!pipe) {
         printf("ERRORE: impossibile eseguire comando.\n");
@@ -81,9 +80,6 @@ TestResult run_test(int test_idx) {
 
     // Legge riga per riga l'output
     while (fgets(line, sizeof(line), pipe)) {
-        // Cerca le stringhe chiave stampate dai tuoi main
-        // Esempio output atteso: "build_index() : 120.50 ms"
-
         if (strstr(line, "build_index()")) {
             char *p = strchr(line, ':');
             if (p) res.build_time = atof(p + 1);
@@ -111,7 +107,7 @@ void write_html_report(const char *filename) {
     FILE *f = fopen(filename, "w");
     if (!f) return;
 
-    // Minimi separati per 32-bit e 64-bit
+    // Minimi per 32-bit e 64-bit
     double min_build_32 = DBL_MAX, min_query_32 = DBL_MAX, min_tot_32 = DBL_MAX;
     double min_build_64 = DBL_MAX, min_query_64 = DBL_MAX, min_tot_64 = DBL_MAX;
 
@@ -201,15 +197,12 @@ int main() {
     printf("      AUTOMATED BENCHMARK SUITE (FULL)            \n");
     printf("==================================================\n\n");
 
-    // 1. Esegui tutti i test
     for (int i = 0; TESTS[i].label != NULL; i++) {
         results[i] = run_test(i);
     }
 
-    // 2. Genera Report HTML
     write_html_report("report_completo.html");
 
-    // 3. Genera Report TXT Semplice
     FILE *ftxt = fopen("report_completo.txt", "w");
     if (ftxt) {
         fprintf(ftxt, "%-30s | %10s | %10s | %10s\n", "CONFIG", "BUILD", "QUERY", "TOTAL");

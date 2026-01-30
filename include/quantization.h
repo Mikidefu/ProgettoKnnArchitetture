@@ -4,11 +4,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// v  = vettore originale     (float)
-// vp = vettore v+ quantizzato (uint8_t)
-// vn = vettore v- quantizzato (uint8_t)
+// v  = vettore originale
+// vp = vettore v+ quantizzato
+// vn = vettore v- quantizzato
 // D  = dimensione del vettore
-// x  = numero di elementi da quantizzare
+// x  = n elementi da quantizzare
 
 // Versione float32
 void quantize_vector(const float *v, uint8_t *vp, uint8_t *vn, size_t D, int x);

@@ -9,7 +9,6 @@
 #include <omp.h>
 #endif
 
-// worst neighbor (max dist_approx)
 static int find_worst_neighbor64(const Neighbor64 *neighbors, int k)
 {
     int worst = 0;
@@ -101,9 +100,6 @@ void knn_query_single_f64(const MatrixF64 *ds,
         neighbors[i].dist_real = euclidean_distance_f64(q, v, D);
     }
 
-    // come per la versione 32 bit, NON ordiniamo qui:
-    // manteniamo l'ordine impostato dal processo di selezione
-
     free(vp_q);
     free(vn_q);
     free(dq_pivot);
@@ -113,7 +109,6 @@ void knn_query_all_f64(const MatrixF64 *ds, const Index *idx, const MatrixF64 *q
 {
     if (!ds || !idx || !queries || !results) return;
 
-    // Questa riga viene IGNORATA se non compiliamo con -fopenmp
     #pragma omp parallel for schedule(dynamic)
     for (size_t qi = 0; qi < queries->n; qi++) {
         const double *q = &queries->data[qi * queries->d];

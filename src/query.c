@@ -6,14 +6,11 @@
 #include "quantization.h"
 #include "distance.h"
 
-// Se OpenMP è attivo, includiamo la libreria
 #ifdef _OPENMP
 #include <omp.h>
 #endif
 
-// -------------------------------------------------------------
 // Trova il vicino peggiore (max distanza approssimata)
-// -------------------------------------------------------------
 static int find_worst_neighbor(const Neighbor *neighbors, int k)
 {
     int worst = 0;
@@ -28,9 +25,7 @@ static int find_worst_neighbor(const Neighbor *neighbors, int k)
     return worst;
 }
 
-// -------------------------------------------------------------
 // KNN per UNA query
-// -------------------------------------------------------------
 void knn_query_single(const MatrixF32 *ds,
                       const Index *idx,
                       const float *q,
@@ -46,7 +41,7 @@ void knn_query_single(const MatrixF32 *ds,
 
     if (k > (int)n) k = (int)n;
 
-    // Inizializza i k vicini
+    // Inizializzazione dei vicini
     for (int i = 0; i < k; i++) {
         neighbors[i].id          = -1;
         neighbors[i].dist_approx = FLT_MAX;
@@ -64,7 +59,7 @@ void knn_query_single(const MatrixF32 *ds,
 
     quantize_vector(q, vp_q, vn_q, D, x);
 
-    // Distanze approx query-pivot
+    // Distanze approssimata query-pivot
     int *dq_pivot = (int *)malloc(h * sizeof(int));
     if (!dq_pivot) {
         free(vp_q);
@@ -78,10 +73,10 @@ void knn_query_single(const MatrixF32 *ds,
         dq_pivot[j] = approximate_distance(vp_q, vn_q, vpj, vnj, D);
     }
 
-    // Scansione di tutti i punti del dataset
+    // Scansione punti del dataset
     for (size_t i = 0; i < n; i++) {
 
-        // Limite inferiore via pivot:
+        // Limite inferiore calcolato attraverso pivot:
         int d_star = 0;
         for (int j = 0; j < h; j++) {
             int dvp = idx->dist[i * h + j];  // ˜d(v_i, p_j)
@@ -94,11 +89,11 @@ void knn_query_single(const MatrixF32 *ds,
         int worst = find_worst_neighbor(neighbors, k);
         float worst_approx = neighbors[worst].dist_approx;
 
-        // PRUNING (usa SOLO distanza APPROSSIMATA)
+        // PRUNING
         if ((float)d_star >= worst_approx)
             continue;
 
-        // Calcolo distanza approx tra v_i e la query
+        // Calcolo distanza approssimata tra v_i e la query
         const uint8_t *vpi = &idx->vp_all[i * D];
         const uint8_t *vni = &idx->vn_all[i * D];
 
@@ -107,7 +102,6 @@ void knn_query_single(const MatrixF32 *ds,
         if ((float)d_approx < worst_approx) {
             neighbors[worst].id          = (int)i;
             neighbors[worst].dist_approx = (float)d_approx;
-            // dist_real verrà calcolata dopo
         }
     }
 
@@ -127,9 +121,7 @@ void knn_query_single(const MatrixF32 *ds,
     free(dq_pivot);
 }
 
-// -------------------------------------------------------------
-// KNN per tutte le query (MODIFICATA PER OPENMP)
-// -------------------------------------------------------------
+// KNN per tutte le query
 void knn_query_all(const MatrixF32 *ds,
                    const Index *idx,
                    const MatrixF32 *queries,
@@ -139,14 +131,12 @@ void knn_query_all(const MatrixF32 *ds,
 {
     if (!ds || !idx || !queries || !results) return;
 
-    // Se compiliamo con -fopenmp, questa direttiva parallelizza il ciclo.
-    // Altrimenti viene ignorata e il ciclo è sequenziale.
     #pragma omp parallel for schedule(dynamic)
     for (size_t qi = 0; qi < queries->n; qi++) {
         const float *q = &queries->data[qi * queries->d];
         Neighbor *nb = &results[qi * k];
 
-        // Ogni thread elabora una query in autonomia
+        // Ogni thread elabora una query da solo
         knn_query_single(ds, idx, q, k, x, nb);
     }
 }
