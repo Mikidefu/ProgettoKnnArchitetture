@@ -7,15 +7,15 @@
 # RDX = vn valori negativi del primo vettore (query)
 # R8  = wp valori positivi del secondo vettore (dataset)
 # R9  = wn valori negativi del secondo vettore (dataset)
-# (D) = sullo stack a [RSP + 40] (dopo la shadow area del chiamante) è la dimensionalità dei vettori
+# (D) = sullo stack a [RSP + 40] (è la dimensionalità dei vettori)
 
 approximate_distance_avx2_asm:
-    # --- PROLOGUE: SALVATAGGIO REGISTRI NON-VOLATILI (ABI WINDOWS) ---
+    # --- SALVATAGGIO REGISTRI NON-VOLATILI (ABI WINDOWS) ---
     # Dobbiamo preservare XMM6-XMM15 (la parte bassa 128 bit).
     # Noi usiamo XMM8, XMM9, XMM10, XMM11, XMM15.
 
-    # Alloco spazio sullo stack (deve essere allineato a 16 byte)
-    # 5 registri * 16 byte = 80 byte -> arrotondo a 88 o 96 per allineamento stack
+    # Allocazione spazio sullo stack (deve essere allineato a 16 byte)
+    # 5 registri * 16 byte = 80 byte -> arrotondiamo a 88 o 96 per allineamento stack
     sub rsp, 88
 
     vmovdqu xmmword ptr [rsp + 0],  xmm8
@@ -24,21 +24,15 @@ approximate_distance_avx2_asm:
     vmovdqu xmmword ptr [rsp + 48], xmm11
     vmovdqu xmmword ptr [rsp + 64], xmm15
 
-    # -------------------------------------------------------------
-    # CORPO DELLA FUNZIONE
-    # -------------------------------------------------------------
-
-    # D in r10. Nota: ora RSP è cambiato di 88 byte, quindi l'argomento
-    # che era a [rsp+40] ora è a [rsp + 40 + 88] = [rsp + 128]
+    # D in r10. Adesso [rsp+40] è a [rsp + 40 + 88] = [rsp + 128]
 
     mov r10, qword ptr [rsp+128]
 
     # Se D == 256: percorso super-ottimizzato
-    cmp r10, 256  #faccio una compare
+    cmp r10, 256  #facciamo una compare
     je  .d256
 
-    # --- Percorso Generico -------------------------------------------------------
-    #faccio l'operazione xor su uno stesso registro per mettere il registro a 0. Lo faccio su tutti i registri
+    #facciamo la xor su uno stesso registro per mettere il registro a 0, per tutti i registri.
     vpxor ymm8,  ymm8,  ymm8    # ymm8 = acc_pp (v+ * w+)
     vpxor ymm9,  ymm9,  ymm9    # ymm9 = acc_nn (v- * w-)
     vpxor ymm10, ymm10, ymm10   # ymm10 = acc_pn (v+ * w-)
@@ -47,17 +41,17 @@ approximate_distance_avx2_asm:
 
     mov r11, r10 # Copio D in r11
     shr r11, 5  # blocks = D / 32
-    test r11, r11 #se D<32 vado direttamente alla gestione dei resti
+    test r11, r11 #se D<32 subito gestione dei resti
     jz .reduce_generic
 
 .loop_generic:
-# Carico i blocchi di bit (32 byte alla volta)
+# Carichiamo i blocchi di bit (32 byte alla volta)
     vmovdqu ymm0, ymmword ptr [rcx] #ymm0 = v+
     vmovdqu ymm1, ymmword ptr [rdx] #ymm1 = v-
     vmovdqu ymm2, ymmword ptr [r8] #ymm2 = w+
     vmovdqu ymm3, ymmword ptr [r9] #ymm3 = w-
 
-AND logico per trovare i bit comuni e PSADBW per contarli
+# AND logico per trovare i bit comuni e PSADBW per contarli
 
     # v+ AND w+ (pp)
     vpand   ymm4, ymm0, ymm2  # Trova i bit a 1 comuni
@@ -79,7 +73,7 @@ AND logico per trovare i bit comuni e PSADBW per contarli
     vpsadbw ymm4, ymm4, ymm15
     vpaddq  ymm11, ymm11, ymm4
 
-    #Avanzo i puntatori degli indirizzi di 32 byte
+    #Avanziamo i puntatori degli indirizzi di 32 byte
     add rcx, 32
     add rdx, 32
     add r8,  32
@@ -88,20 +82,18 @@ AND logico per trovare i bit comuni e PSADBW per contarli
     jnz .loop_generic
 
 .reduce_generic:
-    # Dove salvare i dati temporanei per la riduzione?
-    # Non può usare la "Shadow Area" originale [RSP+8] perché ora lì ci sono i salvataggi XMM (I registri non volatili che stiamo usando e che non vanno sovrascritti).
-    # Si decide di usare i registri GPR (General Purpose Registers) volatili come RAX e R11 per non toccare lo stack.
+    # Salviamo dentro i registri GPR (General Purpose Registers) volatili come RAX e R11 per non toccare lo stack.
 
-    # ---- pp (ymm8) ----
-    vextracti128 xmm0, ymm8, 0 # Estraggo i 128 bit bassi di YMM8 e li metto in xmm0
-    vextracti128 xmm1, ymm8, 1 # Estraggo i 128 bit alti di YMM8 e li metto in xmm1
+    # --- pp (ymm8) ---
+    vextracti128 xmm0, ymm8, 0 # Estraiamo i 128 bit bassi di YMM8 e li mettamo in xmm0
+    vextracti128 xmm1, ymm8, 1 # Estraiamo i 128 bit alti di YMM8 e li mettamo in xmm1
     paddq xmm0, xmm1 #sommo le due metà a 64 bit
-    movq r11, xmm0  # Sposto i primi 64 bit del risultato in R11
-    psrldq xmm0, 8  # Sposto i restanti 64 bit nella parte bassa di XMM0
-    movq rax, xmm0 # Li sposto in RAX
+    movq r11, xmm0  # Spostiamo i primi 64 bit del risultato in R11
+    psrldq xmm0, 8  # Spostiamo i restanti 64 bit nella parte bassa di XMM0
+    movq rax, xmm0 # Li spostiamo in RAX
     add r11, rax    # r11 = pp totale
 
-    # ---- nn (ymm9) ---- faccio le stesse operazioni di prima
+    # --- nn (ymm9) ---
     vextracti128 xmm0, ymm9, 0
     vextracti128 xmm1, ymm9, 1
     paddq xmm0, xmm1
@@ -112,23 +104,21 @@ AND logico per trovare i bit comuni e PSADBW per contarli
     # RAX = pp
     mov rax, r11
 
-    # ---- nn (ymm9) ----
-    psrldq xmm0, 8 # ricalcolo nn
-    # ... riscriviamo la logica finale per non usare stack o troppi registri ...
+    # --- nn (ymm9) ---
+    psrldq xmm0, 8 # ricalcoliamo nn
 
-    # STRATEGIA MIGLIORE PER NON USARE TROPPI GPR:
-    # Usiamo lo spazio stack profondo per i parziali, oppure calcoliamo
     # (pp + nn) - (pn + np) usando XMM0 come accumulatore temporaneo.
 
     # pp + nn
     vpaddq ymm8, ymm8, ymm9
+
     # pn + np
     vpaddq ymm10, ymm10, ymm11
 
     # res = (pp+nn) - (pn+np)
-    vpsubq ymm8, ymm8, ymm10  #Ho eseguito le varie operazioni
+    vpsubq ymm8, ymm8, ymm10
 
-    # Ora riduciamo ymm8 (che contiene il delta finale)
+    # Ora riduciamo ymm8 (il risultato finale)
     vextracti128 xmm0, ymm8, 0
     vextracti128 xmm1, ymm8, 1
     paddq xmm0, xmm1
@@ -137,7 +127,7 @@ AND logico per trovare i bit comuni e PSADBW per contarli
     movq r11, xmm0
     add rax, r11  # RAX contiene il risultato parziale dai blocchi
 
-    # Resto (D % 32) Calcolo quanti byte rimangono (resto della divisione per 32)
+    # Resto (D % 32) Calcoliamo i byte rimanenti (resto della divisione per 32)
     mov r11, r10
     and r11, 31
     jz  .epilogue_restore
@@ -171,7 +161,7 @@ AND logico per trovare i bit comuni e PSADBW per contarli
     inc rcx
     inc rdx
     inc r8
-    inc r9 #incremento i registri
+    inc r9 #registri incrementati
     dec r11
     jnz .rem_loop
 
@@ -179,15 +169,12 @@ AND logico per trovare i bit comuni e PSADBW per contarli
 
 
 .d256:
-    # Implementazione tramite Loop Unrolling: calcolo manuale di 8 blocchi da 32 byte senza salti intermedi
 
     vpxor ymm8,  ymm8,  ymm8
     vpxor ymm9,  ymm9,  ymm9
     vpxor ymm10, ymm10, ymm10
     vpxor ymm11, ymm11, ymm11
     vpxor ymm15, ymm15, ymm15
-
-    # Srotolamento manuale (invariato) per offset 0, 32, 64, 96, 128, 160, 192, 224]
 
     # Offset 0
     vmovdqu ymm0, ymmword ptr [rcx+0]
@@ -333,7 +320,7 @@ AND logico per trovare i bit comuni e PSADBW per contarli
     vpsadbw ymm4, ymm4, ymm15
     vpaddq ymm11, ymm11, ymm4
 
-    # Calcolo finale ottimizzato (pp+nn) - (pn+np) uguale a quello di prima
+    # Calcolo finale ottimizzato (pp+nn) - (pn+np)
     vpaddq ymm8, ymm8, ymm9
     vpaddq ymm10, ymm10, ymm11
     vpsubq ymm8, ymm8, ymm10
@@ -347,8 +334,8 @@ AND logico per trovare i bit comuni e PSADBW per contarli
     add rax, r11
 
 .epilogue_restore:
-    # --- EPILOGO: RIPRISTINO REGISTRI ---
-    # Ripristino i registri originali dallo stack e dealloco lo spazio
+    # --- RIPRISTINO REGISTRI ---
+    # Ripristiniamo i registri originali dallo stack e deallochiamo lo spazio
     vmovdqu xmm8,  xmmword ptr [rsp + 0]
     vmovdqu xmm9,  xmmword ptr [rsp + 16]
     vmovdqu xmm10, xmmword ptr [rsp + 32]
@@ -358,4 +345,4 @@ AND logico per trovare i bit comuni e PSADBW per contarli
     add rsp, 88
 
     vzeroupper # Pulisce lo stato dei registri YMM
-    ret # Ritorna RAX (distanza approssimata finale) al chiamante C.
+    ret # Ritorna RAX (distanza approssimata finale) a C.

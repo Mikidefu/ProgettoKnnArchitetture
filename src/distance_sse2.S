@@ -3,7 +3,7 @@
 .section .rodata
 .p2align 4
 ones16:
- # Definizione di una costante di 16 byte tutti impostati a 1, usata per il conteggio dei bit
+ # Definizione di una costante di 16 byte tutti impostati a 1, usata per il conteggio dei bit (in questo caso conveniente)
     .byte 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
 
 .text
@@ -14,13 +14,11 @@ ones16:
 # RDX = vn
 # R8  = wp
 # R9  = wn
-# 5° arg (D) è sullo stack. Originalmente a [RSP + 40].
-# Dopo il nostro 'sub rsp, 104', sarà a [RSP + 40 + 104] = [RSP + 144].
+# (D) = sullo stack a [RSP + 40] (è la dimensionalità dei vettori)
 
 approximate_distance_sse2_asm:
-    # --- PROLOGO: SALVATAGGIO REGISTRI NON-VOLATILI ---
+    # ---SALVATAGGIO REGISTRI NON-VOLATILI ---
     # Dobbiamo salvare XMM6, XMM7, XMM8, XMM9, XMM10, XMM11
-     # In Windows, i registri XMM6-XMM15 e R12-R15 devono essere preservati
     # 6 registri * 16 byte = 96 byte. Arrotondiamo a 104 per allineamento stack 16-byte.
     sub rsp, 104
 
@@ -38,8 +36,8 @@ approximate_distance_sse2_asm:
     push r15
 
     # --- INIZIO LOGICA ---
-    # Leggi D (offset 144 + 4*8 bytes di push = 176)
-    # Calcolo: 40 (shadow) + 104 (xmm save) + 32 (gpr save) = 176. L'offset tiene conto di shadow space, XMM e push GPR.
+    # Leggiamo D (offset 144 + 4*8 bytes di push = 176)
+    # Calcolo: 40 + 104 + 32 = 176. L'offset tiene conto di shadow space, XMM e push GPR.
 
     mov r10, qword ptr [rsp + 176]
 
@@ -49,15 +47,14 @@ approximate_distance_sse2_asm:
     pcmpeqb xmm7, xmm7                              # xmm7 = crea un amschera di tutti i bit a 1
 
     # fast-path D == 256
-    cmp r10, 256 #se la dimensione D è 256, usa la versione srotolata (unrolled).
+    cmp r10, 256 #se la dimensione D è 256, usa la versione super-ottimizzata.
     je  .d256
 
-    # ---- generic path ----
-    # Inizializzazione accumulatori a zero per i 4 termini della formula binaria
-    pxor xmm8,  xmm8      # acc_pp (v+ * w+)
-    pxor xmm9,  xmm9      # acc_nn (v- * w-)
-    pxor xmm10, xmm10     # acc_pn (v+ * w-)
-    pxor xmm11, xmm11     # acc_np (v- * w+)
+    #facciamo la xor su uno stesso registro per mettere il registro a 0, per tutti i registri.
+    pxor xmm8,  xmm8      # xmm8  = acc_pp (v+ * w+)
+    pxor xmm9,  xmm9      # xmm9  = acc_nn (v- * w-)
+    pxor xmm10, xmm10     # xmm10 = acc_pn (v+ * w-)
+    pxor xmm11, xmm11     # xmm11 = acc_np (v- * w+)
 
     mov r11, r10
     shr r11, 4            # r11 = D / 16 (numero di blocchi da 16 byte/128 bit).
@@ -71,17 +68,17 @@ approximate_distance_sse2_asm:
     movdqu xmm2, xmmword ptr [r8]    # wp
     movdqu xmm3, xmmword ptr [r9]    # wn
 
-    # ---- pp ----
+    # --- pp ---
     movdqa xmm4, xmm0
     pand   xmm4, xmm2 # xmm4 = vp & wp (AND bit-a-bit)
     # Trasformazione dei bit in valori sommabili (0 o 1 per byte):
-    pcmpeqb xmm4, xmm5  # Confronta con zero: FF se uguale, 00 se diverso.
-    pxor    xmm4, xmm7 # Inverte i bit (NOT): FF se bit era presente.
+    pcmpeqb xmm4, xmm5  # Confrontiamo con zero: FF se uguale, 00 se diverso.
+    pxor    xmm4, xmm7 # Invertiamo i bit (NOT): FF se bit era presente.
     pand    xmm4, xmm6 # Maschera con 1: il byte diventa 01 se bit presente, 00 altrimenti
     psadbw  xmm4, xmm5 # Somma orizzontale dei byte (Population Count SSE2).
     paddq   xmm8, xmm4 # Accumulo nel totale pp.
 
-    # ---- nn ---- stesse operazioni di prima
+    # --- nn ---
     movdqa xmm4, xmm1
     pand   xmm4, xmm3
     pcmpeqb xmm4, xmm5
@@ -90,7 +87,7 @@ approximate_distance_sse2_asm:
     psadbw  xmm4, xmm5
     paddq   xmm9, xmm4
 
-    # ---- pn ----
+    # --- pn ---
     movdqa xmm4, xmm0
     pand   xmm4, xmm3
     pcmpeqb xmm4, xmm5
@@ -99,7 +96,7 @@ approximate_distance_sse2_asm:
     psadbw  xmm4, xmm5
     paddq   xmm10, xmm4
 
-    # ---- np ----
+    # --- np ---
     movdqa xmm4, xmm1
     pand   xmm4, xmm2
     pcmpeqb xmm4, xmm5
@@ -192,10 +189,7 @@ approximate_distance_sse2_asm:
     sub rax, r14
     jmp .epilogue
 
-# --------------------------
-# fast-path D == 256 (LOOP UNROLLING)
-# --------------------------
- # Versione srotolata 16 volte (16 * 16 byte = 256 byte) per eliminare i salti.
+ # Versione super-ottimizzata 16 volte (16 * 16 byte = 256 byte) per eliminare i salti.
     # La logica di calcolo è identica al loop generico ma ripetuta linearmente.
 .d256:
     pxor xmm8,  xmm8
@@ -275,13 +269,13 @@ approximate_distance_sse2_asm:
     jmp .epilogue
 
 .epilogue:
-    # Ripristina GPR
+    # Ripristina i registri GPR
     pop r15
     pop r14
     pop r13
     pop r12
 
-    # Ripristina XMM
+    # Ripristina i registri XMM
     movdqu xmm6,  xmmword ptr [rsp + 0]
     movdqu xmm7,  xmmword ptr [rsp + 16]
     movdqu xmm8,  xmmword ptr [rsp + 32]
@@ -290,4 +284,4 @@ approximate_distance_sse2_asm:
     movdqu xmm11, xmmword ptr [rsp + 80]
 
     add rsp, 104
-    ret
+    ret # Ritorna RAX (distanza approssimata finale) a C.
