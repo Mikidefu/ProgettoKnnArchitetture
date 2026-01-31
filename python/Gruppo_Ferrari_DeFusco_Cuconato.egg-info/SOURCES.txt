@@ -1,0 +1,11 @@
+pyproject.toml
+setup.py
+Gruppo_Ferrari_DeFusco_Cuconato/__init__.py
+Gruppo_Ferrari_DeFusco_Cuconato.egg-info/PKG-INFO
+Gruppo_Ferrari_DeFusco_Cuconato.egg-info/SOURCES.txt
+Gruppo_Ferrari_DeFusco_Cuconato.egg-info/dependency_links.txt
+Gruppo_Ferrari_DeFusco_Cuconato.egg-info/requires.txt
+Gruppo_Ferrari_DeFusco_Cuconato.egg-info/top_level.txt
+Gruppo_Ferrari_DeFusco_Cuconato/quantpivot32/__init__.py
+Gruppo_Ferrari_DeFusco_Cuconato/quantpivot64/__init__.py
+Gruppo_Ferrari_DeFusco_Cuconato/quantpivot64omp/__init__.py
