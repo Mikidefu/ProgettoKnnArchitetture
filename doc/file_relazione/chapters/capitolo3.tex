@@ -92,3 +92,17 @@ Prima del ritorno al chiamante, nell'epilogo, tali registri vengono ripristinati
 All'ingresso della routine, il codice Assembly si occupa di preservare lo stato dei registri "callee-saved" (come ESI, EDI e EBX nella versione a 32 bit), ripristinandoli correttamente prima del ritorno al chiamante. Questo garantisce la stabilità dell'intero applicativo, evitando che la sovrascrittura accidentale di registri critici durante l'allocazione della memoria provochi crash al ritorno della funzione.
 
 Questo controllo rigoroso previene i memory leak che, in un algoritmo che deve processare migliaia di query su dataset importanti, porterebbero rapidamente all'esaurimento delle risorse di sistema.
+
+\section{Interfaccia e integrazione Python}
+Al fine di garantire la massima usabilità l'intero sistema di ricerca K-NN è stato ingegnerizzato come un pacchetto Python nativo denominato Gruppo\_Ferrari\_DeFusco\_Cuconato. 
+
+L'architettura del pacchetto segue gli standard di distribuzione definiti dai file pyproject.toml e setup.py, che permettono una compilazione 'on-the-fly' delle estensioni C direttamente sul sistema di destinazione.
+
+L'integrazione core è stata realizzata tramite le Python C-API, utilizzando file di interfaccia (wrapper) che agiscono come 'ponte' tra la memoria gestita da Python e le routine a basso livello. 
+
+In particolare, i moduli quantpivot32, quantpivot64 e quantpivot64omp espongono una classe QuantPivot i cui metodi fit e predict incapsulano le chiamate alle funzioni ottimizzate in Assembly SSE2 e AVX2. 
+
+Questo approccio permette di gestire i dati tramite NumPy array (garantendo l'allineamento della memoria a 16 o 32 byte necessario per le istruzioni SIMD) senza rinunciare alle performance estreme del codice sorgente in linguaggio macchina. La struttura modulare del pacchetto, organizzata in sottocartelle con relativi file \_\_init\_\_.py, assicura infine una chiara separazione tra le diverse varianti architetturali, rendendo il software facilmente installabile tramite il gestore di pacchetti pip e pronto per essere utilizzato in ambienti di produzione ad alte prestazioni.
+
+
+Il file knn\_interface.py funge da punto di ingresso (entry-point) e ambiente di test per l'intero progetto. Lo script implementa un'interfaccia a riga di comando (CLI) basata sulla libreria argparse, permettendo all'utente di configurare dinamicamente tutti i parametri del problema: file di dataset e query (in formato .ds2 o .csv), numero di pivot ($h$), numero di vicini ($k$), bit di quantizzazione ($x$) e, soprattutto, la variante architetturale da utilizzare (32, 64, 64omp). A livello logico lo script si occupa di caricare i dati, orchestrare le diverse versioni, misurare e stampare i tempi di esecuzione.

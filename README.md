@@ -23,6 +23,9 @@ Per eseguire correttamente tutte le configurazioni, la macchina deve disporre di
 * `data/`: Deve contenere i dataset e le query (formato `.ds2`).
     * *Nota: Assicurarsi che i file di input siano presenti in questa cartella prima dell'esecuzione.*
 * `bin/`: Cartella di output dove verranno generati i vari eseguibili, organizzati in sottocartelle.
+* `python/` Cartella con tutti i file necesssari per integrazione in python. In particolare contiene la cartella 
+                Gruppo_Ferrari_deFusco_Cuconato al cui interso c'è l'organizzazione inmoduli per le diverse architetture richieste 
+
 
 ---
 
@@ -72,6 +75,11 @@ Il programma accetta i seguenti argomenti (già configurati nell'IDE, ma modific
 * `-h`: Numero di Pivot (es. 16)
 * `-k`: Numero di K vicini da cercare (es. 8)
 * `-x`: Fattore di quantizzazione (es. 64)
+
+##INSTALLAZIONE DEL PACCHETTO IN PYTHON
+Per utilizzare il pacchetto Python, è necessario un ambiente con i compilatori C/C++ configurati (MSVC su Windows o GCC su Linux).
+Posizionarsi nella cartella python/.
+Eseguire l'installazione tramite pip: pip install .
 
 ---
 
