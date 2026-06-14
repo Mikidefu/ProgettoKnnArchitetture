@@ -8,6 +8,12 @@ Il focus principale è l'ottimizzazione architetturale su processori x86-64, con
 * **Assembly puro** (procedure ottimizzate manualmente)
 * **Multi-threading** (OpenMP)
 
+## Documentazione
+
+* [`docs/ARCHITETTURA.md`](docs/ARCHITETTURA.md) — documentazione tecnica completa: algoritmo, struttura del codice C/Assembly, le 8 configurazioni di build, la libreria Python e la verifica.
+* [`docs/GUIDA_UTILIZZO.md`](docs/GUIDA_UTILIZZO.md) — guida pratica: installazione, uso della libreria e degli eseguibili, come vedere i risultati.
+* [`examples/esempio_knn.py`](examples/esempio_knn.py) — esempio eseguibile che lancia le tre varianti e confronta con i risultati di riferimento.
+
 ## Requisiti di Sistema
 
 Per eseguire correttamente tutte le configurazioni, la macchina deve disporre di:
@@ -76,10 +82,56 @@ Il programma accetta i seguenti argomenti (già configurati nell'IDE, ma modific
 * `-k`: Numero di K vicini da cercare (es. 8)
 * `-x`: Fattore di quantizzazione (es. 64)
 
-##INSTALLAZIONE DEL PACCHETTO IN PYTHON
-Per utilizzare il pacchetto Python, è necessario un ambiente con i compilatori C/C++ configurati (MSVC su Windows o GCC su Linux).
-Posizionarsi nella cartella python/.
-Eseguire l'installazione tramite pip: pip install .
+## INSTALLAZIONE DEL PACCHETTO IN PYTHON
+
+Il pacchetto `Gruppo_Ferrari_DeFusco_Cuconato` espone tre moduli (`quantpivot32`,
+`quantpivot64`, `quantpivot64omp`), ognuno con una classe `QuantPivot` con i metodi
+`fit(dataset, n_pivots, quant_level)` e `predict(query, k)`. Il calcolo della distanza
+approssimata passa per le routine **Assembly** SSE2/AVX2; la variante `quantpivot64omp`
+parallelizza le query con **OpenMP**.
+
+### Requisiti di compilazione
+Poiché le routine sono file Assembly GAS (`.S`) e si usano flag GCC (`-msse2`, `-mavx2`,
+`-fopenmp`), **è richiesto MinGW-w64** (GCC). MSVC non è in grado di assemblare i file `.S`.
+Su Windows, MinGW-w64 si può installare con:
+
+```bash
+winget install -e --id BrechtSanders.WinLibs.POSIX.UCRT
+```
+
+### Build & installazione
+Dalla cartella `python/`, con la cartella `bin` di MinGW nel PATH:
+
+```bash
+# build del wheel (usa automaticamente il compilatore MinGW)
+python setup.py bdist_wheel
+
+# (opzionale ma consigliato) rendi il wheel autosufficiente includendo le DLL runtime
+pip install delvewheel
+python -m delvewheel repair dist/*.whl --add-path "<percorso>/mingw64/bin" -w dist/repaired
+
+# installazione
+pip install dist/repaired/*.whl
+```
+
+In alternativa, per un'installazione diretta (richiede MinGW nel PATH a runtime):
+
+```bash
+pip install . --no-build-isolation
+```
+
+### Esempio d'uso
+```python
+import numpy as np
+from Gruppo_Ferrari_DeFusco_Cuconato.quantpivot64omp import QuantPivot
+
+DS = np.ascontiguousarray(dataset, dtype=np.float64)  # (N, D)
+Q  = np.ascontiguousarray(query,   dtype=np.float64)  # (nq, D)
+
+model = QuantPivot().fit(DS, n_pivots=16, quant_level=64)
+ids, dists = model.predict(Q, k=8)   # ids: (nq, k) int32, dists: (nq, k) distanze euclidee reali
+```
+> Nota: usare `float32` per `quantpivot32`, `float64` per `quantpivot64`/`quantpivot64omp`.
 
 ---
 
