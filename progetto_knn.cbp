@@ -29,7 +29,7 @@
 				<Option compiler="gcc" />
 				<Option parameters="-d data/dataset_2000x256_32.ds2 -q data/query_2000x256_32.ds2 -h 16 -k 8 -x 64 " />
 				<Compiler>
-					<Add directory="C:/Users/acer/Desktop/progetto_knn/progetto_knn/./include" />
+					<Add directory="include" />
 				</Compiler>
 			</Target>
 			<Target title="Release_SSE2">
@@ -41,7 +41,7 @@
 				<Compiler>
 					<Add option="-msse2" />
 					<Add option="-DUSE_SSE2" />
-					<Add directory="C:/Users/acer/Desktop/progetto_knn/progetto_knn/./include" />
+					<Add directory="include" />
 				</Compiler>
 			</Target>
 			<Target title="Release_Scalar64">
@@ -51,7 +51,7 @@
 				<Option compiler="gcc" />
 				<Option parameters="-d data/dataset_2000x256_64.ds2 -q data/query_2000x256_64.ds2 -h 16 -k 8 -x 64 " />
 				<Compiler>
-					<Add directory="C:/Users/acer/Desktop/progetto_knn/progetto_knn/./include" />
+					<Add directory="include" />
 				</Compiler>
 			</Target>
 			<Target title="Release_AVX64">
@@ -134,7 +134,7 @@
 			<Add alias="Build_TUTTO" targets="Release_Scalar;Release_SSE2;Release_Scalar64;Release_AVX64;Release_AVX64ASSEMBLY;Release_SSE2ASSEMBLY;Release_AVX64_OpenMP;Release_SSE2_OpenMP;Benchmark_Report;" />
 		</VirtualTargets>
 		<Compiler>
-			<Add directory="C:/Users/acer/Desktop/progetto_knn/progetto_knn/./include" />
+			<Add directory="include" />
 		</Compiler>
 		<UnitsGlob directory="include" wildcard="" recursive="0" id="316380917" addToProject="1" />
 		<Unit filename=".gitignore">
