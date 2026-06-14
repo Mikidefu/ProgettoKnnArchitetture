@@ -1,20 +1,44 @@
 #include <stdlib.h>
-#include <stdio.h>
-#include <xmmintrin.h>
-#include <math.h>
-#include <omp.h>
 #include "common.h"
+#include "matrix.h"
+#include "index.h"
+#include "query64.h"
 
-extern void prova(params* input);
+/*
+ * Back-end 64 bit (Double Precision, AVX2) + OpenMP.
+ * Compilato con -DQP_DOUBLE, -DUSE_AVX_ASM e -fopenmp: la distanza approssimata
+ * passa per la routine assembly approximate_distance_avx2_asm e il loop sulle
+ * query in knn_query_all_f64 è parallelizzato con "#pragma omp parallel for".
+ */
 
-void fit(params* input){
-    // Selezione dei pivot
-    // Costruzione dell'indice
-    input->index = _mm_malloc(8*sizeof(type), align);
+void fit(params *input) {
+    MatrixF64 ds;
+    ds.n    = (uint32_t)input->N;
+    ds.d    = (uint32_t)input->D;
+    ds.data = input->DS;
+
+    input->index = (void *)build_index_f64(&ds, input->h, input->x);
 }
 
-void predict(params* input){
-    // Esecuzione delle query
-    input->id_nn[1] = 5;
-    prova(input);
+void predict(params *input) {
+    Index *idx = (Index *)input->index;
+    if (!idx) return;
+
+    MatrixF64 ds; ds.n = (uint32_t)input->N;  ds.d = (uint32_t)input->D; ds.data = input->DS;
+    MatrixF64 qs; qs.n = (uint32_t)input->nq; qs.d = (uint32_t)input->D; qs.data = input->Q;
+
+    int k = input->k;
+    Neighbor64 *res = (Neighbor64 *)malloc((size_t)input->nq * (size_t)k * sizeof(Neighbor64));
+    if (!res) return;
+
+    knn_query_all_f64(&ds, idx, &qs, k, input->x, res);
+
+    for (int i = 0; i < input->nq; i++) {
+        for (int j = 0; j < k; j++) {
+            input->id_nn[i * k + j]   = res[i * k + j].id;
+            input->dist_nn[i * k + j] = res[i * k + j].dist_real;
+        }
+    }
+
+    free(res);
 }

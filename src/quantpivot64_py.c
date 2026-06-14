@@ -32,7 +32,7 @@ static void QuantPivot64_dealloc(QuantPivot64Object *self) {
 	if (self->input->P != NULL)
 		_mm_free(self->input->P);
 	if (self->input->index != NULL)
-		_mm_free(self->input->index);
+		free_index((Index*)self->input->index);
 	// Decrementa riferimenti agli array NumPy
 	Py_XDECREF(self->DS_array);
 	Py_XDECREF(self->Q_array);
@@ -175,6 +175,12 @@ static PyObject* QuantPivot64_predict(QuantPivot64Object *self, PyObject *args, 
 	// Estrai dimensioni
 	self->input->nq = (int)PyArray_DIM(query_array, 0);
 
+	// Salva il puntatore alla query e mantiene un riferimento all'array
+	self->input->Q = query;
+	Py_INCREF(query_array);
+	Py_XDECREF(self->Q_array);
+	self->Q_array = query_array;
+
 	// Estrae il numero di K vicini
 	self->input->k = k;
 
@@ -263,7 +269,7 @@ static PyMethodDef QuantPivot64_methods[] = {
 // Definizione del tipo Python
 static PyTypeObject QuantPivot64Type = {
 	PyVarObject_HEAD_INIT(NULL, 0)
-	.tp_name = "gruppoX.quantpivot64.QuantPivot",
+	.tp_name = "Gruppo_Ferrari_DeFusco_Cuconato.quantpivot64.QuantPivot",
 	.tp_doc = "QuantPivot 64-bit indexing and querying",
 	.tp_basicsize = sizeof(QuantPivot64Object),
 	.tp_itemsize = 0,

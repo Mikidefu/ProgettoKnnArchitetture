@@ -13,6 +13,13 @@ obj/
 *.depend
 *.layout
 
+# Python build artifacts
+__pycache__/
+*.pyd
+*.egg-info/
+/python/build/
+/python/dist/
+
 # OS / editor noise
 .DS_Store
 Thumbs.db
