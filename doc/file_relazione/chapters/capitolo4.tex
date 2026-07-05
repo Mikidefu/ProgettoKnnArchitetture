@@ -1,38 +1,45 @@
 \maketitle
 \chapter{Confronto dei tempi rispetto alle ottimizzazioni analizzate}
-In questo capitolo vengono analizzati i risultati ottenuti dai test prestazionali, confrontando le diverse implementazioni dell'algoritmo k-NN. 
 
-I dati, riassunti nella tabella seguente, permettono di valutare l'impatto reale della vettorizzazione Assembly e del parallelismo multi-thread rispetto alle implementazioni scalari in C.
+In questo capitolo vengono analizzati i risultati dei test prestazionali, confrontando le otto configurazioni dell'algoritmo K-NN.
 
-\begin{figure}[H] 
-    \centering
-    \hspace*{-1cm} 
-    \includegraphics[width=1.2\textwidth]{file_relazione/imgs/report_html.png} 
-\end{figure}
+\section{Metodologia}
+Tutte le misure si riferiscono al carico di lavoro di riferimento del progetto: dataset di $n=2000$ punti a $D=256$ dimensioni, $2000$ query, $h=16$ pivot, $k=8$ vicini, quantizzazione $x=64$. I tempi sono suddivisi in \textbf{Build} (quantizzazione del dataset e costruzione dell'indice) e \textbf{Query} (ricerca dei $k$ vicini per tutte le query, ossia l'algoritmo oggetto dell'ottimizzazione).
 
+Le esecuzioni sono automatizzate dal launcher \texttt{mainReport.c} (target \texttt{Benchmark\_Report}), che lancia in sequenza gli otto eseguibili, ne analizza l'output e genera la tabella riassuntiva (\texttt{report\_completo.txt}) e un report HTML con l'evidenziazione dei tempi migliori. Nelle configurazioni OpenMP il tempo è misurato con \texttt{omp\_get\_wtime()} (tempo di parete) anziché con \texttt{clock()}: in un programma multi-thread quest'ultima può sommare il tempo CPU di tutti i thread, falsando il confronto.
 
-I tempi di esecuzione riportati si riferiscono alle fasi di Build (costruzione delle strutture dati utili alle ottimizzazioni e la quantizzazione) e Query (ricerca dei k vicini, quindi l'algoritmo richiesto dal progetto).
+\section{Risultati}
 
-L'analisi dei dati evidenzia miglioramenti radicali grazie all'uso del linguaggio Assembly e delle istruzioni SIMD.
+\begin{table}[H]
+\centering
+\small
+\renewcommand{\arraystretch}{1.35}
+\begin{tabular}{|l|r|r|r|r|}
+\hline
+\textbf{Configurazione} & \textbf{Build (ms)} & \textbf{Query (ms)} & \textbf{Totale (ms)} & \textbf{Speedup query} \\ \hline
+32-bit Scalar (C)        &  84 & 4352 & 4436 & $1\times$ \\ \hline
+32-bit SSE2 (intrinseci) &  82 & 2357 & 2439 & $1{,}8\times$ \\ \hline
+32-bit SSE2 (Assembly)   &  68 &  334 &  402 & $13{,}0\times$ \\ \hline
+32-bit SSE2 + OpenMP     &  88 &   88 &  176 & $\mathbf{49{,}5\times}$ \\ \hline
+64-bit Scalar (C)        & 193 & 4840 & 5033 & $1\times$ \\ \hline
+64-bit AVX2 (intrinseci) &  85 & 2542 & 2627 & $1{,}9\times$ \\ \hline
+64-bit AVX2 (Assembly)   &  67 &  706 &  773 & $6{,}9\times$ \\ \hline
+64-bit AVX2 + OpenMP     &  67 &  109 &  176 & $\mathbf{44{,}4\times}$ \\ \hline
+\end{tabular}
+\caption{Tempi misurati sulla macchina di sviluppo (valori di \texttt{report\_completo.txt}). Lo speedup è calcolato sulla fase di query rispetto alla versione scalare della stessa precisione.}
+\end{table}
 
-Il passaggio dall'implementazione scalare in C a quella ottimizzata in Assembly (SSE2/AVX2) produce un salto prestazionale enorme:
+\section{Analisi dei risultati}
+
 \begin{enumerate}
-	\item Nella versione a 32-bit, la query passa da 6746 ms a soli 400 ms, con uno speedup di circa 17x;
-
-	\item La fase di Build vede il tempo dimezzato (da 157 ms a 77 ms), a conferma della maggiore 				efficienza nella gestione dei cicli di quantizzazione e memoria;
-
-	\item È interessante notare come l'implementazione Assembly sia significativamente più veloce della 		versione a "Intrinsic", dimostrando che la scrittura manuale del codice ha permesso una
-		gestione dei registri e delle istruzioni (come HADDPS) più efficace di quella offerta dall'auto-				vettorizzazione del compilatore.
+    \item \textbf{Il salto prestazionale maggiore è dovuto all'Assembly.} Nella versione a 32 bit la query passa da 4352~ms a 334~ms ($13\times$), a 64 bit da 4840~ms a 706~ms ($6{,}9\times$). Il merito principale è dello schema \texttt{PAND}+\texttt{PSADBW} (Capitolo 3), che riduce ogni prodotto scalare tra maschere a poche istruzioni vettoriali senza mai uscire dal dominio SIMD, unito al percorso srotolato per $D=256$.
+    \item \textbf{OpenMP moltiplica il guadagno quasi linearmente.} La distribuzione delle query sui core porta la fase di query a 88~ms (32 bit) e 109~ms (64 bit): rispetto alle versioni scalari lo speedup complessivo è di circa $49\times$ e $44\times$. L'assenza di sincronizzazioni (query indipendenti, strutture in sola lettura) rende il problema ideale per il parallelismo a thread; \texttt{schedule(dynamic)} compensa il costo disomogeneo delle query indotto dal pruning.
+    \item \textbf{Dopo l'ottimizzazione, il collo di bottiglia si sposta.} Nelle configurazioni OpenMP la fase di query costa quanto (o meno) della fase di build (88 vs 88~ms; 109 vs 67~ms): abbattuto il termine dominante, emergono i costi prima trascurabili — i 2000 ordinamenti della quantizzazione e il caricamento dei dati. È il comportamento previsto dalla legge di Amdahl, e indica che ulteriori ottimizzazioni dovrebbero rivolgersi alla fase di build.
+    \item \textbf{Il divario tra 32 e 64 bit nella versione Assembly} (334 vs 706~ms) non dipende dal calcolo di $\tilde{d}$, identico nei due casi (le maschere sono byte in entrambi): vi concorrono la scansione di dati a doppia ampiezza (banda di memoria), il ricalcolo euclideo su \texttt{double} e i costi di gestione dei registri YMM. Con OpenMP il divario quasi si annulla (109 vs 88~ms).
 \end{enumerate}
 
-L'introduzione di OpenMP porta le prestazioni a un livello superiore:
-\begin{enumerate}
-	\item La configurazione 32-bit SSE2 + OpenMP raggiunge il tempo record di 46 ms nella fase di query;
-
-	\item Rispetto alla versione scalare iniziale (6746 ms), lo speedup totale per la query è di circa 146x. 				Questo risultato dimostra come l'algoritmo sia altamente parallelizzabile: mentre il SIMD 					accelera il calcolo della singola distanza, OpenMP permette di processare più query 						contemporaneamente.
-\end{enumerate}
+\subsection{Nota metodologica}
+Per correttezza va segnalato che i target Scalar e a intrinseci sono compilati senza flag di ottimizzazione, mentre i target Assembly e OpenMP usano \texttt{-O3}: il confronto tra intrinseci e Assembly sovrastima quindi in parte il vantaggio di quest'ultimo (a $-O0$ gli intrinseci generano codice con traffico di stack a ogni operazione). Il dato non inficia la conclusione qualitativa — lo schema \texttt{PSADBW} resta superiore alla catena di unpack e somme a 16 bit degli intrinseci — ma i rapporti tra le colonne centrali della tabella vanno letti con questa avvertenza.
 
 \section{Conclusioni}
-I test confermano che l'architettura a tre livelli (Filtro Pivot, Filtro Approssimato e Verifica Esatta) descritta nel Capitolo 1 è estremamente efficace. Lo scarto tra i tempi "Scalar" e "Assembly" indica che la stragrande maggioranza della potenza computazionale viene risparmiata grazie ai filtri binari e alla velocità delle istruzioni POPCNT e CMPPS implementate a basso livello.
-
-
+I test confermano l'efficacia dell'architettura a tre livelli (filtro pivot, filtro approssimato, verifica esatta) descritta nel Capitolo 1: sui dati di riferimento il pruning elimina il 39\% delle valutazioni complete e riduce le distanze euclidee esatte da 4 milioni a 16.000 (250 volte di meno). Sul piano architetturale, lo stesso identico algoritmo passa da 4,4 a 0,18 secondi complessivi — quasi $50\times$ sulla fase di query — senza modificare una riga della logica: il guadagno proviene interamente dalla discesa di livello dove il tempo si consuma (la distanza approssimata, ridotta a \texttt{PAND}+\texttt{PSADBW}) e dalla salita di livello dove il problema lo consente (un \texttt{pragma} OpenMP sul loop delle query).

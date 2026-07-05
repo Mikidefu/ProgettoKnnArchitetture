@@ -120,6 +120,12 @@ In alternativa, per un'installazione diretta (richiede MinGW nel PATH a runtime)
 pip install . --no-build-isolation
 ```
 
+> **PowerShell (Windows):** i comandi sopra sono in stile bash. In PowerShell `python` può
+> puntare allo *stub* del Microsoft Store e i glob `*.whl` **non** vengono espansi per i
+> programmi esterni. Per i comandi esatti (interprete corretto, espansione dei glob con
+> `Get-ChildItem`, import dalla root del progetto) vedi
+> [`docs/GUIDA_UTILIZZO.md`](docs/GUIDA_UTILIZZO.md) §2 e §7.
+
 ### Esempio d'uso
 ```python
 import numpy as np

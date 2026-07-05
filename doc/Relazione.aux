@@ -1,6 +1,60 @@
 \relax 
-\providecommand\babel@aux[2]{}
+\providecommand \babel@aux [2]{\global \let \babel@toc \@gobbletwo }
 \@nameuse{bbl@beforestart}
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
 \babel@aux{italian}{}
 \babel@aux{italian}{}
-\gdef \@abspage@last{1}
+\@writefile{toc}{\contentsline {chapter}{\numberline {1}Introduzione}{3}{chapter.1}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.0.1}Come ovviare al problema del costo computazionale}{3}{subsection.1.0.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.0.2}La distanza approssimata e la quantizzazione binaria}{4}{subsection.1.0.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.0.3}Osservazione sulla natura di $\tilde  {d}$}{5}{subsection.1.0.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {chapter}{\numberline {2}Ottimizzazioni richieste}{6}{chapter.2}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\@writefile{toc}{\contentsline {section}{\numberline {2.1}Obiettivi del progetto}{6}{section.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2.2}Varianti architetturali e requisiti di precisione}{6}{section.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2.1}Versione 32-bit SSE (Single Precision)}{7}{subsection.2.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2.2}Versione 64-bit AVX (Double Precision)}{7}{subsection.2.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2.3}Ottimizzazioni di basso livello e gestione dati}{7}{section.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3.1}Rappresentazione delle maschere}{7}{subsection.2.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3.2}Gestione della dimensionalità e cleanup loop}{7}{subsection.2.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3.3}Accessi alla memoria}{8}{subsection.2.3.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3.4}Istruzioni hardware specializzate: PSADBW come population count vettoriale}{8}{subsection.2.3.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2.4}Parallelismo di alto livello con OpenMP}{8}{section.2.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2.5}Sintesi tecnica delle configurazioni}{10}{section.2.5}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2.1}{\ignorespaces Confronto tecnico tra le architetture target del progetto.}}{10}{table.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {chapter}{\numberline {3}Analisi dell'implementazione}{11}{chapter.3}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\@writefile{toc}{\contentsline {section}{\numberline {3.1}Modularità: una logica, quattro motori}{11}{section.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3.2}Interfacciamento C--Assembly e ABI Windows x64}{11}{section.3.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3.1}{\ignorespaces Commutazione del back-end tramite macro.}}{12}{table.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3.3}Il calcolo vettoriale di $\tilde  {d}$}{13}{section.3.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3.1}Loop unrolling e percorso rapido $D=256$}{13}{subsection.3.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3.4}La distanza euclidea}{13}{section.3.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3.5}Implementazione della quantizzazione}{14}{section.3.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3.6}Gestione della memoria}{14}{section.3.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3.7}Integrazione Python}{14}{section.3.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {chapter}{\numberline {4}Confronto dei tempi rispetto alle ottimizzazioni analizzate}{15}{chapter.4}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\@writefile{toc}{\contentsline {section}{\numberline {4.1}Metodologia}{15}{section.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4.2}Risultati}{16}{section.4.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {4.1}{\ignorespaces Tempi misurati sulla macchina di sviluppo (valori di \texttt  {report\_completo.txt}). Lo speedup è calcolato sulla fase di query rispetto alla versione scalare della stessa precisione.}}{16}{table.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4.3}Analisi dei risultati}{16}{section.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3.1}Nota metodologica}{17}{subsection.4.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4.4}Conclusioni}{17}{section.4.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {chapter}{\numberline {5}Il pacchetto Python}{18}{chapter.5}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\@writefile{toc}{\contentsline {section}{\numberline {5.1}Interfaccia e moduli}{18}{section.5.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {5.1}{\ignorespaces I tre moduli del pacchetto.}}{18}{table.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5.2}Architettura a tre strati}{19}{section.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5.3}Gestione della memoria tra i due mondi}{20}{section.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5.4}Sistema di build}{20}{section.5.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5.5}Verifica di correttezza del pacchetto}{21}{section.5.5}\protected@file@percent }
+\gdef \@abspage@last{22}

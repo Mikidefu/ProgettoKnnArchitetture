@@ -2,49 +2,49 @@
 \chapter{Ottimizzazioni richieste}
 
 \section{Obiettivi del progetto}
-L'obiettivo primario dell'attività progettuale risiede nello sviluppo di un'implementazione ad alte prestazioni dell'algoritmo di ricerca dei $K$ vicini ($K$-Nearest Neighbors). Data la complessità computazionale intrinseca del problema, pari a $O(n \cdot D)$, il progetto si focalizza sul superamento dei colli di bottiglia del codice seriale attraverso l'uso di tecniche di ottimizzazione hardware-aware, sfruttando il calcolo vettoriale (SIMD) e il parallelismo multi-thread.
+L'obiettivo primario dell'attività progettuale risiede nello sviluppo di un'implementazione ad alte prestazioni dell'algoritmo di ricerca dei $K$ vicini ($K$-Nearest Neighbors). Data la complessità computazionale intrinseca del problema, pari a $O(n \cdot D)$ per query, il progetto si focalizza sul superamento dei colli di bottiglia del codice seriale attraverso l'uso di tecniche di ottimizzazione hardware-aware, sfruttando il calcolo vettoriale (SIMD) e il parallelismo multi-thread.
+
+Un principio guida ha orientato tutte le scelte: \textbf{ottimizzare dove il tempo si consuma davvero}. Grazie ai filtri descritti nel Capitolo 1, l'operazione dominante del programma non è la distanza euclidea (calcolata solo per i $k$ finalisti di ogni query, circa 16.000 volte in tutto), bensì la distanza approssimata $\tilde{d}$ sulle maschere binarie, invocata milioni di volte durante la scansione del dataset. È dunque su $\tilde{d}$ che si concentrano la vettorizzazione e la scrittura in Assembly.
 
 \section{Varianti architetturali e requisiti di precisione}
 La traccia impone la realizzazione di due soluzioni distinte, differenziate per architettura di riferimento e precisione numerica, al fine di confrontare l'impatto delle diverse estensioni del set di istruzioni x86.
 
 \subsection{Versione 32-bit SSE (Single Precision)}
-Questa versione è ottimizzata per l'esecuzione in ambienti a 32 bit, privilegiando la velocità di calcolo su dati a precisione singola.
 \begin{itemize}
-    \item \textbf{Precisione:} Utilizzo del tipo di dato \texttt{float} (32 bit).
-    \item \textbf{Set di istruzioni:} Sfruttamento del repertorio \textbf{SSE} (\textit{Streaming SIMD Extensions}).
-    \item \textbf{Parallelismo hardware:} Impiego dei registri \texttt{XMM} da 128 bit, che consentono di processare simultaneamente 4 componenti \texttt{float}.
+    \item \textbf{Precisione:} Utilizzo del tipo di dato \texttt{float} (32 bit) per dataset, query e distanze euclidee.
+    \item \textbf{Set di istruzioni:} Repertorio \textbf{SSE2} (\textit{Streaming SIMD Extensions}).
+    \item \textbf{Parallelismo hardware:} Registri \texttt{XMM} da 128 bit. Poiché le maschere di quantizzazione sono vettori di byte (un byte per dimensione, valori 0/1), ogni istruzione vettoriale elabora \textbf{16 elementi della maschera per ciclo}.
 \end{itemize}
 
 \subsection{Versione 64-bit AVX (Double Precision)}
-La versione a 64 bit è orientata a scenari che richiedono elevata accuratezza numerica, sfruttando le capacità delle estensioni vettoriali più moderne.
 \begin{itemize}
     \item \textbf{Precisione:} Utilizzo del tipo di dato \texttt{double} (64 bit).
-    \item \textbf{Set di istruzioni:} Impiego del repertorio \textbf{AVX} (\textit{Advanced Vector Extensions}).
-    \item \textbf{Parallelismo hardware:} Utilizzo dei registri \texttt{YMM} da 256 bit. Nonostante la precisione doppia, l'ampiezza del registro permette l'elaborazione di 4 elementi \texttt{double} in parallelo.
+    \item \textbf{Set di istruzioni:} Repertorio \textbf{AVX2} (\textit{Advanced Vector Extensions}).
+    \item \textbf{Parallelismo hardware:} Registri \texttt{YMM} da 256 bit: \textbf{32 byte di maschera per istruzione} nel calcolo di $\tilde{d}$; nella versione a intrinseci, la distanza euclidea su \texttt{double} viene vettorizzata elaborando 4 elementi per ciclo.
 \end{itemize}
 
 \section{Ottimizzazioni di basso livello e gestione dati}
-Per garantire l'efficienza massima nelle routine Assembly, sono state adottate strategie specifiche di gestione della memoria e delle istruzioni.
 
-\subsection{Gestione della dimensionalità e Cleanup Loop}
-Un aspetto critico affrontato nelle versioni ottimizzate riguarda la gestione della dimensionalità $D$. Poiché non è garantito che $D$ sia un multiplo esatto della capacità dei registri (4 elementi per ciclo), è stata implementata una sezione di \textit{cleanup} scalare. Al termine del loop principale vettorializzato, un ciclo sequenziale processa le componenti rimanenti, garantendo l'accuratezza del calcolo per qualsiasi valore di $D$ ed evitando accessi a memoria non allocata.
+\subsection{Rappresentazione delle maschere}
+Le quantizzazioni $v^+$ e $v^-$ sono memorizzate come array di \texttt{uint8\_t} con valori 0/1: un byte per dimensione. La scelta è deliberata: sui byte l'hardware SIMD dispone di operazioni logiche e di somma orizzontale estremamente efficienti, e l'intero corredo di maschere del dataset ($2 \times 2000 \times 256$ byte $\approx$ 1 MB) più la matrice dell'indice (128 KB) risiede stabilmente nelle cache di livello 2/3.
 
-\subsection{Ottimizzazione degli accessi e allineamento}
-L'efficienza SIMD è strettamente legata alla modalità di caricamento dei dati. L'allineamento a 16 byte (SSE) e 32 byte (AVX) non è solo un vincolo, ma una scelta per abilitare le istruzioni di \textit{fast loading} come \texttt{MOVAPS} e \texttt{VMOVAPD}. Questo previene le penalità dovute ai \textit{misaligned accesses}, massimizzando il throughput dei dati verso la CPU.
+\subsection{Gestione della dimensionalità e cleanup loop}
+Il loop principale vettorizzato elabora blocchi interi di registro (16 byte in SSE2, 32 in AVX2). Poiché non è garantito che $D$ sia un multiplo esatto della dimensione di blocco, al termine del loop una sezione di \textit{cleanup} scalare processa le componenti residue, garantendo il risultato corretto per qualunque $D$ ed evitando accessi a memoria non allocata. Per il caso di riferimento $D=256$, inoltre, le routine Assembly dispongono di un percorso dedicato completamente srotolato (si veda il Capitolo 3).
 
-\subsection{Istruzioni hardware specializzate}
-Le implementazioni Assembly sfruttano istruzioni dedicate per ridurre i cicli di clock:
-\begin{itemize}
-    \item \textbf{Riduzione Orizzontale:} L'uso di \texttt{HADDPS} (SSE) consente di sommare le componenti interne a un registro con un'unica operazione, velocizzando la finalizzazione della distanza.
-    \item \textbf{Population Count:} Nella distanza approssimata, l'istruzione \texttt{POPCNT} sostituisce interi cicli di confronto, contando i bit impostati a 1 nelle maschere binarie in un singolo ciclo hardware.
-\end{itemize}
+\subsection{Accessi alla memoria}
+Le routine vettoriali impiegano \textbf{load non allineate} (\texttt{MOVDQU} in SSE2, \texttt{VMOVDQU} in AVX2). La scelta elimina qualunque vincolo di allineamento sui buffer delle maschere, semplificando l'interfacciamento con il resto del programma (e con NumPy, nel pacchetto Python): sulle microarchitetture correnti la penalità delle load non allineate su dati residenti in cache è trascurabile, mentre un vincolo di allineamento avrebbe imposto allocatori dedicati su tutta la filiera.
+
+\subsection{Istruzioni hardware specializzate: PSADBW come population count vettoriale}
+Il cuore delle routine ottimizzate è l'istruzione \texttt{PSADBW} (\textit{Packed Sum of Absolute Differences of Bytes}), nata per la stima di moto nei codec video: calcola la somma delle differenze assolute tra i byte di due registri. Usata contro il registro \emph{zero}, la ``differenza assoluta da zero'' di un byte è il byte stesso: \texttt{PSADBW} diventa così una \textbf{somma orizzontale di 16 (o 32) byte in una singola istruzione}. Su maschere di valori 0/1, sommare i byte equivale a \emph{contare gli 1}: ogni prodotto scalare della definizione di $\tilde{d}$ si riduce a una \texttt{PAND} (intersezione dei bit) seguita da una \texttt{PSADBW} (conteggio).
+
+Si è scelto consapevolmente di \textbf{non} impiegare l'istruzione scalare \texttt{POPCNT}: avrebbe richiesto di trasferire i dati dai registri vettoriali a quelli general-purpose a ogni blocco, mentre \texttt{PSADBW} mantiene l'intero conteggio nel dominio SIMD, accumulando con \texttt{PADDQ} direttamente nei registri XMM/YMM.
 
 \section{Parallelismo di alto livello con OpenMP}
-Per la versione AVX, è richiesta l'integrazione di \textbf{OpenMP}. Mentre la vettorializzazione accelera il calcolo della singola distanza (parallelismo a livello di dati), OpenMP introduce il parallelismo a livello di thread. La strategia prevede la distribuzione del loop delle query tra i vari core della CPU, permettendo di processare più punti contemporaneamente e sfruttando appieno l'architettura multi-core.
+Per entrambe le soluzioni è stata realizzata una variante \textbf{OpenMP}. Mentre la vettorizzazione accelera il calcolo della singola distanza (parallelismo a livello di dati), OpenMP introduce il parallelismo a livello di thread distribuendo il \emph{loop delle query} tra i core della CPU. Il problema è ideale per questa strategia: ogni query legge strutture in sola lettura (dataset, indice, maschere) e scrive esclusivamente nel proprio segmento dell'array dei risultati — nessuna sincronizzazione è necessaria. Si è adottato \texttt{schedule(dynamic)} perché il pruning rende il costo delle query disomogeneo: l'assegnazione dinamica evita che i thread restino inattivi in attesa dei blocchi più lenti.
 
 \newpage
 \section{Sintesi tecnica delle configurazioni}
-La tabella seguente riassume le specifiche tecniche e le differenze hardware tra le implementazioni richieste.
+La tabella seguente riassume le specifiche tecniche delle implementazioni ottimizzate, quali risultano dal codice consegnato.
 
 \begin{table}[h!]
 \centering
@@ -52,15 +52,14 @@ La tabella seguente riassume le specifiche tecniche e le differenze hardware tra
 \renewcommand{\arraystretch}{1.5}
 \begin{tabularx}{\textwidth}{|l|X|X|}
 \hline
-
-\textbf{Caratteristica} & \textbf{Versione SSE} & \textbf{Versione AVX} \\ \hline
+\textbf{Caratteristica} & \textbf{Versione SSE2} & \textbf{Versione AVX2} \\ \hline
 \textbf{Precisione} & Single Precision (32-bit) & Double Precision (64-bit) \\ \hline
 \textbf{Tipo di dato C} & \texttt{float} & \texttt{double} \\ \hline
 \textbf{Registro SIMD} & \texttt{XMM} (128 bit) & \texttt{YMM} (256 bit) \\ \hline
-\textbf{Allineamento} & 16 Byte & 32 Byte \\ \hline
-\textbf{Istruzioni Chiave} & \texttt{MOVAPS, HADDPS, POPCNT} & \texttt{VMOVAPD, VCMPPD, POPCNT} \\ \hline
-\textbf{Parallelismo} & Data-level (SIMD) & Data-level + Thread-level (OpenMP) \\ \hline
+\textbf{Byte di maschera per istruzione} & 16 & 32 \\ \hline
+\textbf{Istruzioni chiave ($\tilde{d}$)} & \texttt{MOVDQU, PAND, PSADBW, PADDQ} & \texttt{VMOVDQU, VPAND, VPSADBW, VPADDQ} \\ \hline
+\textbf{Accessi a memoria} & load non allineate & load non allineate \\ \hline
+\textbf{Parallelismo} & Data-level (SIMD) + Thread-level (variante OpenMP) & Data-level (SIMD) + Thread-level (variante OpenMP) \\ \hline
 \end{tabularx}
 \caption{Confronto tecnico tra le architetture target del progetto.}
 \end{table}
-

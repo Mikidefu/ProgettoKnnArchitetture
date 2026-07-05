@@ -33,43 +33,66 @@ Annotare il percorso della cartella `mingw64\bin` (es.
 
 ## 2. Installare la libreria Python
 
+> **⚠️ Quale `python` usare (PowerShell su Windows).** Spesso il comando `python` punta allo
+> *stub "Alias di esecuzione app"* del Microsoft Store (`...\WindowsApps\python.exe`), che
+> non è un interprete reale → errore *"Impossibile eseguire il programma 'python.exe'"*. Usa
+> l'interprete vero tramite percorso completo, memorizzandolo in una variabile di sessione:
+> ```powershell
+> $py = "$env:LOCALAPPDATA\Python\pythoncore-3.14-64\python.exe"   # adatta se diverso
+> & $py --version
+> ```
+> Per trovare il tuo: `Get-Command python -All` / `where.exe python`. **Attenzione:** `py`
+> può avviare un *altro* Python privo di NumPy/setuptools — assicurati di usare l'interprete
+> in cui hai installato le dipendenze. Nei comandi seguenti usa **`& $py`** al posto di
+> `python`. Inoltre **PowerShell non espande i caratteri jolly `*`** passati a programmi
+> esterni (`pip`, `delvewheel`): indica il nome completo del file, oppure espandi il glob con
+> `Get-ChildItem` (come mostrato sotto).
+
 ### Opzione A — installare il wheel già pronto (consigliata)
 Nel repository è presente un wheel **autosufficiente** (le DLL di GCC sono incluse:
 non serve avere MinGW installato per usarlo):
 
 ```powershell
-pip install python\dist\repaired\gruppo_ferrari_defusco_cuconato-1.0-cp314-cp314-win_amd64.whl
+# (definisci prima $py come nella nota sopra)
+& $py -m pip install python\dist\repaired\gruppo_ferrari_defusco_cuconato-1.0-cp314-cp314-win_amd64.whl
 ```
 
 ### Opzione B — ricompilare da sorgente
 Con la cartella `mingw64\bin` nel PATH della sessione:
 
 ```powershell
+# interprete Python corretto (vedi nota sopra) e cartella bin di MinGW
+$py    = "$env:LOCALAPPDATA\Python\pythoncore-3.14-64\python.exe"   # adatta se diverso
+$mingw = (Resolve-Path "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.POSIX.UCRT_*\mingw64\bin").Path
+$env:Path = "$mingw;" + $env:Path
+
 # 1) entra nella cartella di packaging
 cd python
 
-# 2) aggiungi MinGW al PATH (adatta il percorso)
-$env:PATH = "C:\...\mingw64\bin;" + $env:PATH
+# 2) costruisci il wheel (usa automaticamente MinGW)
+& $py setup.py bdist_wheel
 
-# 3) costruisci il wheel (usa automaticamente MinGW)
-python setup.py bdist_wheel
+# 3) (consigliato) rendi il wheel autosufficiente includendo le DLL runtime
+& $py -m pip install delvewheel
+$src = (Get-ChildItem dist\*.whl | Select-Object -First 1).FullName    # espande il glob
+& $py -m delvewheel repair $src --add-path "$mingw" -w dist\repaired
 
-# 4) (consigliato) rendi il wheel autosufficiente includendo le DLL runtime
-pip install delvewheel
-python -m delvewheel repair dist\*.whl --add-path "C:\...\mingw64\bin" -w dist\repaired
-
-# 5) installa
-pip install --force-reinstall dist\repaired\*.whl
+# 4) installa (espandi il glob: PowerShell non lo fa per gli exe esterni)
+$whl = (Get-ChildItem dist\repaired\*.whl | Select-Object -First 1).FullName
+& $py -m pip install --force-reinstall $whl
 ```
 
 In alternativa, installazione diretta (richiede però MinGW nel PATH **anche a runtime**):
 ```powershell
-pip install . --no-build-isolation
+& $py -m pip install . --no-build-isolation
 ```
 
-Verifica rapida dell'installazione:
+Verifica rapida dell'installazione — **da una cartella diversa da `python\`** (es. la root
+del progetto), altrimenti la cartella sorgente `python\Gruppo_Ferrari_DeFusco_Cuconato\`
+maschera il pacchetto installato e l'import fallisce:
 ```powershell
-python -c "from Gruppo_Ferrari_DeFusco_Cuconato.quantpivot64omp import QuantPivot; print('OK')"
+cd ..    # esci da python\ verso la root del progetto
+& $py -c "from Gruppo_Ferrari_DeFusco_Cuconato.quantpivot64omp import QuantPivot; print('OK')"
 ```
 
 ---
@@ -216,6 +239,9 @@ def load_ds2(path, dtype):
 
 | Sintomo | Causa | Soluzione |
 |---|---|---|
+| `Impossibile eseguire il programma 'python.exe'` (PowerShell) | `python` punta allo stub alias del Microsoft Store | usare il percorso completo dell'interprete vero (`$py`, vedi §2), oppure disattivare gli alias in *Impostazioni → App → Alias di esecuzione app* |
+| `Invalid wheel filename (wrong number of parts): '*'` o `looks like a filename, but the file does not exist` | PowerShell non espande `*` per gli exe esterni | passare il nome completo del file, o espandere con `$whl = (Get-ChildItem dist\repaired\*.whl).FullName` e poi `& $py -m pip install $whl` |
+| `ModuleNotFoundError: ..._quantpivot32` all'import | stai lanciando Python da dentro `python\`: la cartella sorgente maschera il pacchetto installato | spostarsi in un'altra cartella (es. la root del progetto) prima di importare/eseguire |
 | `ImportError: DLL load failed` | mancano le DLL di GCC | usare il wheel **repaired** (autosufficiente), oppure `import os; os.add_dll_directory(r"C:\...\mingw64\bin")` prima dell'import |
 | `ValueError: Input array not aligned` | array NumPy non allineato | usare `aligned()` (vedi `examples/esempio_knn.py`) o `np.ascontiguousarray` su buffer allineato |
 | `TypeError: Data must be float32/float64` | dtype sbagliato | `float32` per `quantpivot32`, `float64` per `quantpivot64`/`omp` |

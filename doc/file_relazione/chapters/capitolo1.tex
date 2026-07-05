@@ -28,11 +28,12 @@ Nonostante l'efficacia del pruning tramite pivot, un numero considerevole di pun
 
 Per evitare di ricorrere al calcolo della distanza euclidea esatta, la traccia introduce il concetto di distanza approssimata ($\tilde{d}$).
 
-Questa tecnica si basa sulla quantizzazione binaria dei vettori: per ogni vettore $v \in DS$ (e per ogni query $q$), vengono estratti due vettori binari, $v^+$ e $v^-$, di dimensione $D$. Tali vettori identificano le componenti che presentano maggiore valore assoluto:
+Questa tecnica si basa sulla quantizzazione binaria dei vettori: per ogni vettore $v \in DS$ (e per ogni query $q$), vengono estratti due vettori binari, $v^+$ e $v^-$, di dimensione $D$. Si individuano le $x$ componenti di $v$ con \emph{valore assoluto} massimo e, per ciascuna di esse:
 \begin{itemize}
-	\item $v^+$ contiene 1 in corrispondenza delle $x$ componenti più 						grandi e positive, 0 altrove;
-	\item $v^-$ contiene 1 in corrispondenza delle $x$ componenti più 						grandi e negative, 0 altrove.
+	\item se la componente è positiva (o nulla), viene posto a 1 il bit corrispondente di $v^+$;
+	\item se la componente è negativa, viene posto a 1 il bit corrispondente di $v^-$.
 \end{itemize}
+Tutte le altre posizioni restano a 0: dei vettori originali si conservano quindi soltanto la \emph{posizione} e il \emph{segno} delle componenti dominanti.
 
 Grazie a questa rappresentazione, la distanza tra due punti può essere stimata mediante operazioni di prodotto scalare tra vettori binari, estremamente efficienti da calcolare a livello hardware:
 \begin{equation}\tilde{d}(v,w) = (v^+ \cdot w^+) + (v^- \cdot w^-) - (v^+ \cdot w^-) - (v^- \cdot w^+)\end{equation}.
@@ -43,3 +44,6 @@ In sintesi, il flusso decisionale per ogni punto $v$ del dataset rispetto a una 
 	\item Filtro Approssimato: Se il punto supera il primo filtro, si calcola $\tilde{d}(q, v)$. Se l'approssimazione è peggiore del candidato $k$-esimo attuale, il punto viene scartato.
 	\item Verifica Esatta: Solo per i punti superstiti si procede al calcolo della distanza euclidea esatta (Eq. 1) e all'eventuale aggiornamento della lista dei $k$ vicini. Il guadagno in termini di tempi di esecuzione risiede proprio in quest'ultimo passaggio: la formula matematica della distanza euclidea viene effetutata 			solo su questi ultimi elementi che hanno passato le prime operazioni di filtraggio.
 \end{enumerate}
+
+\subsection{Osservazione sulla natura di $\tilde{d}$}
+È opportuno segnalare una proprietà non ovvia della misura approssimata. Dalla definizione (Eq. 2) segue che per due vettori identici $\tilde{d}(v,v) = x$ (il valore \emph{massimo}), mentre per vettori con impronte di segno opposte $\tilde{d}$ assume valori negativi: formalmente $\tilde{d}$ si comporta come una \emph{similarità} e non come una metrica (non è definita positiva e non soddisfa, in generale, la disuguaglianza triangolare). L'algoritmo previsto dalla traccia la impiega comunque come distanza — selezionando i $k$ punti con $\tilde{d}$ minima e usando $|\tilde{d}(v,p) - \tilde{d}(q,p)|$ come limite inferiore per il pruning — che va quindi inteso come \emph{euristica} conforme alla specifica piuttosto che come filtro matematicamente esatto. I risultati prodotti coincidono al 100\% con i file di riferimento ufficiali del progetto, generati con la medesima logica.
