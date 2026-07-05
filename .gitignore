@@ -26,3 +26,7 @@ Thumbs.db
 
 # Optional: logs
 *.log
+
+# LaTeX build artifacts (si versionano solo .tex, .pdf, .aux)
+doc/Relazione.toc
+doc/Relazione.out

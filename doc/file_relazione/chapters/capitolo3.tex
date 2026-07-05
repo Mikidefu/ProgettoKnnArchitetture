@@ -3,106 +3,71 @@
 
 In questo capitolo viene analizzato il codice sorgente del progetto, evidenziando le scelte tecniche adottate per garantire l'efficienza computazionale e il corretto interfacciamento tra i moduli in C e le routine in Assembly.
 
-L’efficienza del sistema sviluppato non risiede esclusivamente nell'uso di istruzioni vettoriali, ma nasce da una progettazione precisa  dell’interfaccia tra i diversi livelli del software. 
+\section{Modularità: una logica, quattro motori}
+La scelta architetturale più importante del progetto è la separazione tra la \emph{logica} dell'algoritmo e il \emph{motore} di calcolo della distanza approssimata. I moduli di alto livello — \texttt{index.c} (costruzione dell'indice), \texttt{query.c} e \texttt{query64.c} (ricerca dei vicini) — esistono in un'unica versione e non contengono alcun codice dipendente dall'architettura; tutte le varianti (scalare, intrinseci, Assembly) si ottengono ricompilando gli stessi sorgenti con macro di preprocessore diverse:
 
-Il punto di giunzione fondamentale tra l’astrazione del linguaggio C e la rigidità dell'Assembly è rappresentato dalla struttura input\_data.
+\begin{table}[h!]
+\centering
+\small
+\renewcommand{\arraystretch}{1.4}
+\begin{tabularx}{\textwidth}{|l|l|X|}
+\hline
+\textbf{File} & \textbf{Macro} & \textbf{Implementazione di \texttt{approximate\_distance()}} \\ \hline
+\texttt{distance.c} & --- & ciclo scalare C sui byte delle maschere \\ \hline
+\texttt{distance.c} & \texttt{USE\_SSE2} & intrinseci SSE2 (registri XMM) \\ \hline
+\texttt{distance.c} & \texttt{USE\_AVX} & intrinseci AVX2 (registri YMM) \\ \hline
+\texttt{distance32ASSEMBLY.c} & \texttt{USE\_SSE2\_ASM} & chiamata alla routine esterna \texttt{approximate\_distance\_sse2\_asm} \\ \hline
+\texttt{distance64ASSEMBLY.c} & \texttt{USE\_AVX\_ASM} & chiamata alla routine esterna \texttt{approximate\_distance\_avx2\_asm} \\ \hline
+\end{tabularx}
+\caption{Commutazione del back-end tramite macro.}
+\end{table}
 
- Questa non deve essere intesa come un semplice contenitore passivo di variabili, ma come il vero nucleo operativo che permette di superare i limiti intrinseci del passaggio dei parametri tra linguaggi di diverso livello.
+Questo approccio garantisce che il confronto prestazionale del Capitolo 4 misuri esclusivamente l'effetto dell'ottimizzazione della funzione critica: tutto il resto del programma è, letteralmente, lo stesso codice. La versione scalare funge inoltre da riferimento (\emph{baseline}) per la validazione dei risultati.
 
-In un'architettura a 32 bit, il passaggio di numerosi argomenti (come i puntatori alle matrici del dataset, delle query, dei pivot e i parametri di controllo $k$, $h$, $x$) graverebbe pesantemente sullo stack, introducendo un overhead che vanificherebbe i guadagni prestazionali della vettorizzazione. 
+\section{Interfacciamento C--Assembly e ABI Windows x64}
+Le routine Assembly (\texttt{distance\_sse2.S}, \texttt{distance\_avx2.S}, sintassi Intel assemblate da GCC) espongono una firma C convenzionale:
 
-L'adozione della struttura input\_data permette invece di passare un unico indirizzo di memoria alla routine Assembly, la quale può poi navigare tra i dati con estrema precisione.
+\begin{verbatim}
+int approximate_distance_xxx_asm(const uint8_t *vp, const uint8_t *vn,
+                                 const uint8_t *wp, const uint8_t *wn,
+                                 size_t D);
+\end{verbatim}
 
-Questa "giunzione" è resa possibile dalla definizione di offset mnemonici che mappano la memoria fisica: nel codice Assembly, il riferimento a un dato non avviene tramite il nome della variabile, ma calcolando la distanza in byte dall'inizio della struttura. Ad esempio, l'accesso alla dimensionalità $D$ o al numero di query $nq$ viene gestito puntando agli indirizzi precisi (come [RDI+64] o [RDI+68]), garantendo che il codice a basso livello operi esattamente sugli stessi dati manipolati dal C, senza alcuna ambiguità o spreco di cicli di clock per la gestione dei parametri.
+Secondo la convenzione di chiamata \textbf{Windows x64}, i quattro puntatori alle maschere arrivano nei registri \texttt{RCX}, \texttt{RDX}, \texttt{R8} e \texttt{R9}, mentre il quinto argomento $D$ viene letto dallo stack (all'ingresso si trova a \texttt{[RSP+40]}, oltre l'indirizzo di ritorno e i 32 byte di \emph{shadow space}; l'offset effettivo usato nel codice tiene conto dello spazio allocato dal prologo).
 
-\section{Gestione della memoria e allineamento dati}
-L’efficienza delle istruzioni SIMD (SSE e AVX) è strettamente legata alla modalità con cui i dati vengono caricati dai banchi di memoria ai registri della CPU. Analizzando il modulo $matrix.c$, si osserva come l'allocazione del dataset e delle query non avvenga tramite una semplice funzione malloc, ma segua rigorosi vincoli di allineamento.
+Il rispetto dell'ABI è curato con attenzione, requisito indispensabile per una funzione invocata milioni di volte anche da thread OpenMP concorrenti:
+\begin{itemize}
+    \item nel \textbf{prologo} vengono salvati sullo stack i registri non volatili utilizzati (nella versione SSE2: \texttt{XMM6--XMM11} e, tramite \texttt{push}, \texttt{r12--r15}); nell'\textbf{epilogo} vengono ripristinati nell'ordine inverso;
+    \item la routine AVX2 termina con \texttt{VZEROUPPER}, che azzera la parte alta dei registri YMM evitando le penalità di transizione tra codice AVX e codice SSE legacy;
+    \item il valore di ritorno (un intero, la distanza approssimata) viene restituito in \texttt{RAX}.
+\end{itemize}
 
-Per poter utilizzare istruzioni di caricamento rapido, come MOVAPS per SSE o VMOVAPD per AVX, i puntatori base delle matrici devono essere allineati a confini di 16 o 32 byte. Nel progetto, questa necessità è gestita tramite funzioni di allocazione specifica che garantiscono che l'indirizzo di memoria restituito sia un multiplo della dimensione del registro di destinazione. Tale accorgimento previene le penalità di performance dovute ai "misaligned accesses", che costringerebbero la CPU a eseguire cicli di lettura supplementari, riducendo drasticamente il throughput dei dati durante il calcolo delle distanze.
+\section{Il calcolo vettoriale di $\tilde{d}$}
+Per ogni blocco di maschera (16 byte in SSE2, 32 in AVX2) ciascuno dei quattro termini di $\tilde{d}$ viene calcolato con lo schema descritto nel Capitolo 2. Nella versione AVX2 bastano tre istruzioni per termine:
 
-\section{Modularità e setting dei target di compilazione}
-Ci siamo poi occupati di andare a definire diversi target di compilazione: Release\_Scalar, Release\_SSE2 e Release\_AVX64. Questa separazione riflette una scelta implementativa precisa: mantenere un'unica logica di controllo in C capace di invocare diverse implementazioni del "back-end" computazionale.
+\begin{verbatim}
+vpand   ymm4, ymm0, ymm2   ; v+ AND w+ : byte a 1 dove entrambi hanno 1
+vpsadbw ymm4, ymm4, ymm15  ; somma orizzontale contro zero = conteggio
+vpaddq  ymm8, ymm8, ymm4   ; accumulo del termine pp
+\end{verbatim}
 
-I file distance.c e quantization.c fungono da strato di astrazione. Essi contengono le versioni scalari scritte in C, utilizzate come riferimento per la validazione dei risultati (baseline), e le dichiarazioni delle funzioni extern implementate in Assembly. Questo approccio modulare permette al compilatore di linkare le routine ottimizzate solo quando il target specifico lo richiede, garantendo che la versione a 32 bit float non venga inquinata da logiche a 64 bit double, e viceversa. Tale distinzione è fondamentale per testare accuratamente lo speedup ottenuto attraverso la vettorizzazione rispetto al codice sequenziale puro.
+La versione SSE2 aggiunge, prima del conteggio, una normalizzazione difensiva (\texttt{PCMPEQB}/\texttt{PXOR}/\texttt{PAND} con una costante di 1) che rende ogni byte non nullo esattamente pari a 1: il codice risulterebbe corretto anche con maschere non strettamente binarie. La versione AVX2 omette questo passaggio, affidandosi al contratto — garantito dalla quantizzazione — che i byte valgano solo 0 o 1: due filosofie entrambe legittime, la seconda più rapida di tre istruzioni per termine.
 
-\section{Vettorizzazione e calcolo parallelo nei registri SIMD}
-Analizzando i file distance\_sse2.S e distance\_avx2.S, emerge chiaramente come il calcolo della distanza euclidea sia stato trasformato da una sequenza di operazioni scalari a un flusso vettorializzato.
+Al termine del loop i quattro accumulatori vengono ridotti a scalari e combinati come $(pp + nn) - (pn + np)$, con il risultato depositato in \texttt{RAX}.
 
-Invece di iterare singolarmente su ogni dimensione $D$ dei vettori, il codice sfrutta i registri XMM (per la versione SSE a 32 bit) e YMM (per la versione AVX a 64 bit).
+\subsection{Loop unrolling e percorso rapido $D=256$}
+Poiché il carico di lavoro di riferimento ha $D=256$, entrambe le routine controllano questo caso all'ingresso (\texttt{cmp r10, 256}) e deviano su un percorso \textbf{completamente srotolato}: 16 blocchi da 16 byte in SSE2, 8 blocchi da 32 byte in AVX2, scritti in sequenza senza istruzioni di controllo del ciclo. L'eliminazione di incrementi, confronti e salti condizionati mantiene la pipeline costantemente alimentata; è questo il percorso eseguito nella totalità delle chiamate del benchmark. Per ogni altro valore di $D$ resta disponibile il loop generico con cleanup scalare dei resti.
 
-L'implementazione non si limita a caricare i dati, ma ottimizza il ciclo di calcolo $(a-b)^2$ riducendo al minimo gli accessi alla memoria attraverso l'utilizzo di istruzioni come SUBPS e MULPS. 
+\section{La distanza euclidea}
+Grazie all'architettura a filtri, la distanza euclidea esatta viene calcolata soltanto per i $k$ finalisti di ogni query: con i parametri di riferimento sono $8 \times 2000 = 16.000$ chiamate, contro i circa 2,4 milioni di valutazioni di $\tilde{d}$. Per questa ragione non è stata realizzata una versione Assembly dell'euclidea: nelle build Assembly essa è un semplice ciclo scalare C, mentre nella build a intrinseci AVX a 64 bit viene vettorizzata con \texttt{\_mm256\_sub\_pd}/\texttt{\_mm256\_mul\_pd} (4 \texttt{double} per iterazione). L'effetto sul tempo totale è in ogni caso marginale: l'ottimizzazione è stata concentrata dove risiede il collo di bottiglia.
 
-Analizzando il loop principale, si nota l'utilizzo di istruzioni come SUBPS e MULPS. La strategia adottata prevede il caricamento di un blocco di componenti (4 float o 4 double) in un registro, la sottrazione simultanea con il corrispondente blocco del secondo vettore e l'elevamento al quadrato del risultato moltiplicando il registro per se stesso.
+\section{Implementazione della quantizzazione}
+La quantizzazione è implementata interamente in C (\texttt{quantization.c}), in due versioni gemelle per \texttt{float} e \texttt{double}. Per ogni vettore viene costruito un array ausiliario di coppie $(|v_i|,\, i)$, ordinato in senso decrescente con \texttt{qsort}; i bit di $v^+$ o $v^-$ corrispondenti alle prime $x$ posizioni vengono quindi accesi in base al segno della componente originale. Il costo è $O(D \log D)$ per vettore.
 
-Un dettaglio tecnico fondamentale risiede nella gestione della riduzione orizzontale: dopo aver accumulato i quadrati delle differenze nei canali del registro vettoriale, il codice utilizza l'istruzione HADDPS (Horizontal Add Packed Single) nella versione SSE. Questa istruzione permette di sommare le componenti adiacenti all'interno dello stesso registro con un'unica operazione hardware, eliminando la necessità di complesse sequenze di shuffle e addizioni scalari, velocizzando così l'ottenimento della distanza parziale da confrontare con la soglia di pruning.
+La scelta di non vettorizzare questa fase è motivata dai numeri: la quantizzazione dell'intero dataset avviene una sola volta nella fase di build (2000 vettori, decine di millisecondi), e a query time se ne esegue una sola per query. Sui dataset del progetto si è inoltre verificata l'assenza di pareggi di valore assoluto al confine di selezione: l'esito della quantizzazione è pertanto deterministico e indipendente dai dettagli dell'ordinamento.
 
-\section{Ottimizzazione del Controllo di Flusso e Loop Unrolling}
+\section{Gestione della memoria}
+Il modulo \texttt{matrix.c} carica i file \texttt{.ds2} (header di due \texttt{uint32} con $n$ e $D$, seguito dai dati row-major) in buffer allocati con \texttt{malloc} standard. Non è imposto alcun vincolo di allineamento: come discusso nel Capitolo 2, le routine vettoriali usano load non allineate, quindi nessun allocatore speciale è necessario nella filiera C. L'indice (\texttt{Index}) possiede tutte le proprie strutture — maschere del dataset, maschere dei pivot, matrice delle distanze — e viene rilasciato con un'unica \texttt{free\_index()}; ogni percorso di errore nella costruzione rilascia le allocazioni parziali prima di ritornare \texttt{NULL}.
 
-Un ulteriore livello di accuratezza è garantito dalla gestione della dimensionalità $D$.
-
- Poiché non è garantito che $D$ sia un multiplo esatto della dimensione dei registri SIMD (4 elementi per SSE o 8 per AVX), il codice implementa una gestione specifica dei resti). 
-
-Al termine del loop principale vettorializzato, è presente una sezione di "cleanup" scalare che processa le ultime componenti rimanenti. Questo assicura che il calcolo della distanza sia matematicamente esatto per qualsiasi dimensione del dataset, evitando al contempo accessi a zone di memoria non allocate che causerebbero errori di segmentazione.
-
-Un'altra tecnica utilizzata in questa parte è la Loop Unrolling: invece di processare un singolo blocco vettoriale per ogni iterazione, il codice è strutturato per gestire più blocchi contemporaneamente. 
-
-Questa scelta riduce l'incidenza delle istruzioni di controllo del ciclo (incremento del contatore e salto condizionato) e permette alla CPU di sfruttare meglio il pipelining interno mantenendo le unità di esecuzione sempre alimentate.
-
-Inoltre, l'interazione tra il codice Assembly e la logica di pruning descritta precedentemente è gestita in questo modo: le routine Assembly restituiscono il controllo al chiamante C non appena viene superata la soglia di distanza massima, oppure procedono al caricamento dei dati successivi se il punto è ancora un potenziale candidato. 
-
-Questo meccanismo è implementato tramite salti condizionali ottimizzati che tengono conto della predizione dei rami della CPU, evitando che un calcolo inutile rallenti l'intero processo di ricerca dei vicini.
-
-\section{Implementazione della quantizzazione e della distanza approssimata}
-
-Il processo di quantizzazione, implementato nelle routine Assembly, rappresenta il secondo livello di filtraggio del sistema. 
-
-L'analisi del codice rivela come il software trasformi i vettori ad alta dimensionalità in una coppia di maschere binarie, $v^+$ e $v^-$. 
-
-Questo passaggio non è una semplice riduzione di precisione, ma una vera e propria estrazione delle componenti con modulo maggiore.
-
-Per identificare le $x$ componenti più significative, il codice Assembly utilizza un approccio basato sull'analisi delle singole componenti del vettore.
-
-La soglia di magnitudo utilizzata per generare le maschere binarie non è un valore statico, ma viene calcolata dinamicamente nel modulo C in base al parametro $x$. In Assembly, tale soglia viene "propagata" su tutti i canali del registro, permettendo all'istruzione CMPPS di confrontare l'intero blocco vettoriale in un unico ciclo di clock. Quindi attraverso l'istruzione di confronto vettoriale CMPPS (o VCMPPD in AVX), la CPU confronta simultaneamente 4 o 8 componenti con una soglia pre-calcolata. 
-
-Il risultato di questo confronto è una maschera di bit che viene poi salvata nei buffer temporanei.
-
-Come spiegato precedentemente, ora è il momento del calcolo della distanza approssimata $\tilde{d}$, che serve per risparmiare calcoli e quindi potenza computazionale ed evitare di calcolare la distanza matematicamente corretta per ogni vettore. 
-
-Una volta ottenute le maschere binarie per la query e per il punto del dataset, il prodotto scalare tra vettori binari viene risolto tramite operazioni logiche AND seguite dall'istruzione PSADBW.  
-
-Per il calcolo della distanza approssimata $\tilde{d}(v,w)$, l'implementazione Assembly non si affida esclusivamente all'istruzione POPCNT, che potrebbe non essere presente su tutte le architetture target. 
-
-Si è scelto quindi di utilizzare l'istruzione PSADBW (Sum of Absolute Differences of Bytes).Il processo avviene in tre step vettoriali:
-\begin{enumerate}
-\item Si esegue un PAND bit-a-bit tra le maschere di quantizzazione.
-\item Si utilizza una maschera costante di '1' (caricata nel registro xmm6 in SSE2 o ymm15 in AVX2) per isolare i bit attivi.
-\item L'istruzione PSADBW somma orizzontalmente i byte, effettuando di fatto un population count vettoriale estremamente veloce senza la necessità di iterazioni scalari.
-\end{enumerate}
-
-Questa scelta implementativa permette di sostituire centinaia di moltiplicazioni e somme in virgola mobile con poche operazioni bit-a-bit, accelerando la stima della distanza prima di decidere se procedere o meno con il calcolo euclideo esatto.
-
-\section{Gestione dei buffer temporanei}
-
-Un aspetto critico dell'analisi riguarda il rispetto della Windows x64 Call Convention (ABI). Come si osserva nei file distance\_sse2.S e distance\_avx2.S, il codice Assembly deve preservare i registri definiti non-volatili dal sistema operativo (da XMM6 a XMM15).
-
-All’ingresso delle routine, il codice esegue un prologo rigoroso: alloca spazio sullo stack e salva i registri utilizzati (come XMM8-XMM11). 
-
-Prima del ritorno al chiamante, nell'epilogo, tali registri vengono ripristinati ai loro valori originali. Questo garantisce la stabilità dell'intero applicativo, evitando che la sovrascrittura accidentale di registri critici provochi crash, specialmente durante l'esecuzione parallela gestita da OpenMP."
-
-All'ingresso della routine, il codice Assembly si occupa di preservare lo stato dei registri "callee-saved" (come ESI, EDI e EBX nella versione a 32 bit), ripristinandoli correttamente prima del ritorno al chiamante. Questo garantisce la stabilità dell'intero applicativo, evitando che la sovrascrittura accidentale di registri critici durante l'allocazione della memoria provochi crash al ritorno della funzione.
-
-Questo controllo rigoroso previene i memory leak che, in un algoritmo che deve processare migliaia di query su dataset importanti, porterebbero rapidamente all'esaurimento delle risorse di sistema.
-
-\section{Interfaccia e integrazione Python}
-Al fine di garantire la massima usabilità l'intero sistema di ricerca K-NN è stato ingegnerizzato come un pacchetto Python nativo denominato Gruppo\_Ferrari\_DeFusco\_Cuconato. 
-
-L'architettura del pacchetto segue gli standard di distribuzione definiti dai file pyproject.toml e setup.py, che permettono una compilazione 'on-the-fly' delle estensioni C direttamente sul sistema di destinazione.
-
-L'integrazione core è stata realizzata tramite le Python C-API, utilizzando file di interfaccia (wrapper) che agiscono come 'ponte' tra la memoria gestita da Python e le routine a basso livello. 
-
-In particolare, i moduli quantpivot32, quantpivot64 e quantpivot64omp espongono una classe QuantPivot i cui metodi fit e predict incapsulano le chiamate alle funzioni ottimizzate in Assembly SSE2 e AVX2. 
-
-Questo approccio permette di gestire i dati tramite NumPy array (garantendo l'allineamento della memoria a 16 o 32 byte necessario per le istruzioni SIMD) senza rinunciare alle performance estreme del codice sorgente in linguaggio macchina. La struttura modulare del pacchetto, organizzata in sottocartelle con relativi file \_\_init\_\_.py, assicura infine una chiara separazione tra le diverse varianti architetturali, rendendo il software facilmente installabile tramite il gestore di pacchetti pip e pronto per essere utilizzato in ambienti di produzione ad alte prestazioni.
-
-
-Il file knn\_interface.py funge da punto di ingresso (entry-point) e ambiente di test per l'intero progetto. Lo script implementa un'interfaccia a riga di comando (CLI) basata sulla libreria argparse, permettendo all'utente di configurare dinamicamente tutti i parametri del problema: file di dataset e query (in formato .ds2 o .csv), numero di pivot ($h$), numero di vicini ($k$), bit di quantizzazione ($x$) e, soprattutto, la variante architetturale da utilizzare (32, 64, 64omp). A livello logico lo script si occupa di caricare i dati, orchestrare le diverse versioni, misurare e stampare i tempi di esecuzione.
+\section{Integrazione Python}
+L'intero sistema è inoltre fruibile come pacchetto Python nativo, con la stessa base di codice C e Assembly qui descritta. All'argomento, per la sua estensione, è dedicato il Capitolo 5.

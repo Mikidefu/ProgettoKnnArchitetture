@@ -1,0 +1,70 @@
+\maketitle
+\chapter{Il pacchetto Python}
+
+Come richiesto dalla traccia, l'intero sistema è reso disponibile come pacchetto Python nativo, denominato \texttt{Gruppo\_Ferrari\_DeFusco\_Cuconato}. Il requisito fondante della progettazione è stato \textbf{non duplicare l'algoritmo}: il pacchetto non reimplementa nulla, ma espone attraverso le Python C-API lo stesso identico codice C e Assembly validato nei capitoli precedenti. Ne consegue che ogni proprietà dimostrata per gli eseguibili — correttezza rispetto ai riferimenti ufficiali inclusa — vale automaticamente anche per la libreria.
+
+\section{Interfaccia e moduli}
+Il pacchetto espone tre sotto-moduli, uno per configurazione hardware, ciascuno con la medesima classe \texttt{QuantPivot} dotata di un'interfaccia in stile \emph{scikit-learn}:
+
+\begin{table}[h!]
+\centering
+\small
+\renewcommand{\arraystretch}{1.4}
+\begin{tabularx}{\textwidth}{|l|l|X|}
+\hline
+\textbf{Modulo} & \textbf{Precisione} & \textbf{Back-end} \\ \hline
+\texttt{quantpivot32}    & \texttt{float32} & Assembly SSE2 \\ \hline
+\texttt{quantpivot64}    & \texttt{float64} & Assembly AVX2 \\ \hline
+\texttt{quantpivot64omp} & \texttt{float64} & Assembly AVX2 + OpenMP \\ \hline
+\end{tabularx}
+\caption{I tre moduli del pacchetto.}
+\end{table}
+
+Il metodo \texttt{fit(dataset, n\_pivots, quant\_level)} costruisce l'indice a pivot (quantizzazione del dataset e matrice $\tilde{d}(v,p)$) e restituisce l'oggetto stesso, consentendo il concatenamento; \texttt{predict(query, k)} esegue la ricerca dei $k$ vicini per tutte le query e restituisce la tupla \texttt{(ids, dists)}: due array NumPy di forma $(n_q, k)$ contenenti gli identificativi dei vicini e le rispettive distanze euclidee reali.
+
+\begin{verbatim}
+import numpy as np
+from Gruppo_Ferrari_DeFusco_Cuconato.quantpivot64omp import QuantPivot
+
+DS = np.ascontiguousarray(dataset, dtype=np.float64)   # (N, D)
+Q  = np.ascontiguousarray(query,   dtype=np.float64)   # (nq, D)
+
+model      = QuantPivot().fit(DS, n_pivots=16, quant_level=64)
+ids, dists = model.predict(Q, k=8)
+\end{verbatim}
+
+\section{Architettura a tre strati}
+L'integrazione è organizzata in tre strati, dal più esterno al più interno:
+
+\begin{enumerate}
+    \item \textbf{Wrapper C-API} (\texttt{quantpivot*\_py.c}): definisce il tipo Python \texttt{QuantPivot} e i suoi metodi. Riceve gli array NumPy, ne verifica forma (bidimensionale), tipo (\texttt{float32}/\texttt{float64} a seconda del modulo) e allineamento, quindi ne passa al livello inferiore i puntatori ai dati grezzi: \textbf{nessuna copia} dei dati viene mai effettuata.
+    \item \textbf{Adattatore} (\texttt{quantpivot32.c}, \texttt{quantpivot64.c}, \texttt{quantpivot64omp.c}): traduce la struttura ponte \texttt{params} nelle strutture native del nucleo (\texttt{MatrixF32}/\texttt{MatrixF64}, \texttt{Index}, \texttt{Neighbor}) e invoca \texttt{build\_index()} in \texttt{fit} e \texttt{knn\_query\_all()} in \texttt{predict}.
+    \item \textbf{Nucleo condiviso}: gli stessi \texttt{index.c}, \texttt{query.c}/\texttt{query64.c}, \texttt{quantization.c} e le routine Assembly degli eseguibili, compilati con le medesime macro (\texttt{USE\_SSE2\_ASM} o \texttt{USE\_AVX\_ASM}, più \texttt{-fopenmp} per la variante parallela).
+\end{enumerate}
+
+La struttura \texttt{params}, definita in \texttt{include/common.h}, è l'unico oggetto che attraversa il confine tra gli strati: raccoglie i puntatori a dataset e query, i parametri del problema ($h$, $k$, $x$, dimensioni), il puntatore all'indice costruito e i buffer dei risultati. La macro \texttt{QP\_DOUBLE} commuta il tipo scalare \texttt{type} (\texttt{float}/\texttt{double}) e la costante di allineamento \texttt{align} (16/32 byte), permettendo di condividere lo stesso wrapper tra le versioni a diversa precisione.
+
+\section{Gestione della memoria tra i due mondi}
+La coesistenza del garbage collector di Python con le allocazioni manuali del C richiede alcune cautele, tutte gestite nel wrapper:
+
+\begin{itemize}
+    \item \textbf{Riferimenti agli input}: \texttt{fit} e \texttt{predict} incrementano il contatore di riferimenti (\texttt{Py\_INCREF}) degli array NumPy ricevuti e lo rilasciano solo alla distruzione dell'oggetto: gli array non possono essere deallocati da Python mentre il C ne sta usando i puntatori.
+    \item \textbf{Proprietà dei risultati}: i buffer di \texttt{ids} e \texttt{dists} sono allocati in C (\texttt{\_mm\_malloc}) e ``adottati'' dagli array NumPy restituiti tramite \texttt{PyCapsule} con distruttore: quando l'ultimo riferimento Python all'array cade, il distruttore libera la memoria C. Non esistono quindi né copie né perdite di memoria.
+    \item \textbf{Distruzione del modello}: alla deallocazione dell'oggetto \texttt{QuantPivot}, l'indice viene rilasciato con la stessa \texttt{free\_index()} usata dagli eseguibili.
+\end{itemize}
+
+\section{Sistema di build}
+Il pacchetto si compila con \texttt{setuptools} (\texttt{python/setup.py} + \texttt{pyproject.toml}), che dichiara tre estensioni native — una per modulo — ciascuna composta dai propri sorgenti C \emph{e dal file Assembly} \texttt{.S} corrispondente, con le macro e i flag appropriati (\texttt{-O3 -msse2} / \texttt{-O3 -mavx2}, più \texttt{-fopenmp} per la variante parallela).
+
+Due aspetti hanno richiesto una classe \texttt{build\_ext} personalizzata:
+\begin{itemize}
+    \item \texttt{distutils} non riconosce i sorgenti \texttt{.S}: l'estensione va registrata esplicitamente tra i tipi compilabili;
+    \item su Windows il compilatore predefinito sarebbe MSVC, che non è in grado di assemblare i file in sintassi GAS né accetta i flag GCC: la classe forza l'uso di \textbf{MinGW-w64} (GCC).
+\end{itemize}
+
+Il wheel prodotto viene infine reso \emph{autosufficiente} con lo strumento \texttt{delvewheel}, che vi incorpora le DLL runtime di GCC (\texttt{libgcc}, \texttt{libgomp}, \texttt{libwinpthread}): l'utente finale installa il pacchetto con un semplice \texttt{pip install} senza necessità di avere MinGW sul proprio sistema.
+
+\section{Verifica di correttezza del pacchetto}
+La libreria è stata sottoposta alla stessa verifica degli eseguibili: per ciascuno dei tre moduli, \texttt{fit} + \texttt{predict} sul carico di lavoro di riferimento ($n=2000$, $D=256$, $h=16$, $k=8$, $x=64$) riproducono \textbf{2000 query su 2000} dei file di riferimento ufficiali — stessi identificativi nello stesso ordine e stesse distanze (tolleranza $10^{-3}$ per \texttt{float32}, $10^{-9}$ per \texttt{float64}). Il percorso verificato attraversa l'intera catena: validazione NumPy, wrapper C-API, adattatore, nucleo C e routine Assembly (con OpenMP attivo nella terza variante).
+
+Lo script dimostrativo \texttt{examples/esempio\_knn.py} ripete questa verifica a ogni esecuzione, riportando anche i tempi: sul carico di riferimento la variante \texttt{quantpivot64omp} completa la fase di \texttt{predict} in circa 60--70~ms, coerentemente con i risultati del Capitolo 4. Il beneficio del multi-threading resta dunque pienamente fruibile anche dall'interno dell'interprete Python: durante l'esecuzione delle routine native il GIL non costituisce un ostacolo, poiché il parallelismo è gestito interamente da OpenMP nello strato C.
