@@ -87,44 +87,35 @@ Il programma accetta i seguenti argomenti (già configurati nell'IDE, ma modific
 Il pacchetto `Gruppo_Ferrari_DeFusco_Cuconato` espone tre moduli (`quantpivot32`,
 `quantpivot64`, `quantpivot64omp`), ognuno con una classe `QuantPivot` con i metodi
 `fit(dataset, n_pivots, quant_level)` e `predict(query, k)`. Il calcolo della distanza
-approssimata passa per le routine **Assembly** SSE2/AVX2; la variante `quantpivot64omp`
-parallelizza le query con **OpenMP**.
+approssimata è vettorizzato con **intrinseci SIMD** (SSE2 a 32 bit, AVX2 a 64 bit),
+portabili su ogni piattaforma; la variante `quantpivot64omp` parallelizza le query con **OpenMP**.
 
-### Requisiti di compilazione
-Poiché le routine sono file Assembly GAS (`.S`) e si usano flag GCC (`-msse2`, `-mavx2`,
-`-fopenmp`), **è richiesto MinGW-w64** (GCC). MSVC non è in grado di assemblare i file `.S`.
-Su Windows, MinGW-w64 si può installare con:
+### Requisiti
+Serve soltanto un **compilatore C** e **NumPy** — nessun toolchain particolare:
+* **Linux / macOS:** `gcc` o `clang` (di norma già presenti); su Linux servono gli header
+  di Python (pacchetto `python3-dev`).
+* **Windows:** MSVC (Build Tools per Visual Studio) **oppure** MinGW-w64.
 
-```bash
-winget install -e --id BrechtSanders.WinLibs.POSIX.UCRT
-```
+`setup.py` sceglie automaticamente i flag corretti per il compilatore in uso.
 
-### Build & installazione
-Dalla cartella `python/`, con la cartella `bin` di MinGW nel PATH:
-
-```bash
-# build del wheel (usa automaticamente il compilatore MinGW)
-python setup.py bdist_wheel
-
-# (opzionale ma consigliato) rendi il wheel autosufficiente includendo le DLL runtime
-pip install delvewheel
-python -m delvewheel repair dist/*.whl --add-path "<percorso>/mingw64/bin" -w dist/repaired
-
-# installazione
-pip install dist/repaired/*.whl
-```
-
-In alternativa, per un'installazione diretta (richiede MinGW nel PATH a runtime):
+### Installazione
+Dalla **cartella principale del progetto** (quella che contiene `setup.py`):
 
 ```bash
-pip install . --no-build-isolation
+pip install .
 ```
 
-> **PowerShell (Windows):** i comandi sopra sono in stile bash. In PowerShell `python` può
-> puntare allo *stub* del Microsoft Store e i glob `*.whl` **non** vengono espansi per i
-> programmi esterni. Per i comandi esatti (interprete corretto, espansione dei glob con
-> `Get-ChildItem`, import dalla root del progetto) vedi
-> [`docs/GUIDA_UTILIZZO.md`](docs/GUIDA_UTILIZZO.md) §2 e §7.
+Il comando compila le estensioni con il compilatore di sistema e installa il pacchetto.
+Verifica (da una cartella **diversa** da `python/`, per non mascherare i moduli compilati
+con i sorgenti):
+
+```bash
+python -c "from Gruppo_Ferrari_DeFusco_Cuconato.quantpivot64omp import QuantPivot; print('OK')"
+```
+
+> **Nota (Windows/PowerShell):** se `python` apre lo *stub* del Microsoft Store, usa il
+> percorso completo dell'interprete; se compili con MinGW aggiungi la sua cartella `bin` al
+> PATH. Dettagli in [`docs/GUIDA_UTILIZZO.md`](docs/GUIDA_UTILIZZO.md).
 
 ### Esempio d'uso
 ```python

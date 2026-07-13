@@ -17,8 +17,8 @@ obj/
 __pycache__/
 *.pyd
 *.egg-info/
-/python/build/
-/python/dist/
+build/
+dist/
 
 # OS / editor noise
 .DS_Store

@@ -1,7 +1,7 @@
 \maketitle
 \chapter{Il pacchetto Python}
 
-Come richiesto dalla traccia, l'intero sistema è reso disponibile come pacchetto Python nativo, denominato \texttt{Gruppo\_Ferrari\_DeFusco\_Cuconato}. Il requisito fondante della progettazione è stato \textbf{non duplicare l'algoritmo}: il pacchetto non reimplementa nulla, ma espone attraverso le Python C-API lo stesso identico codice C e Assembly validato nei capitoli precedenti. Ne consegue che ogni proprietà dimostrata per gli eseguibili — correttezza rispetto ai riferimenti ufficiali inclusa — vale automaticamente anche per la libreria.
+Come richiesto dalla traccia, l'intero sistema è reso disponibile come pacchetto Python nativo, denominato \texttt{Gruppo\_Ferrari\_DeFusco\_Cuconato}. Il requisito fondante della progettazione è stato \textbf{non duplicare l'algoritmo}: il pacchetto non reimplementa nulla, ma espone attraverso le Python C-API lo stesso identico nucleo di calcolo C validato nei capitoli precedenti (nella sua variante a \emph{intrinseci SIMD}, portabile su ogni piattaforma). Ne consegue che ogni proprietà dimostrata per gli eseguibili — correttezza rispetto ai riferimenti ufficiali inclusa — vale automaticamente anche per la libreria.
 
 \section{Interfaccia e moduli}
 Il pacchetto espone tre sotto-moduli, uno per configurazione hardware, ciascuno con la medesima classe \texttt{QuantPivot} dotata di un'interfaccia in stile \emph{scikit-learn}:
@@ -13,9 +13,9 @@ Il pacchetto espone tre sotto-moduli, uno per configurazione hardware, ciascuno 
 \begin{tabularx}{\textwidth}{|l|l|X|}
 \hline
 \textbf{Modulo} & \textbf{Precisione} & \textbf{Back-end} \\ \hline
-\texttt{quantpivot32}    & \texttt{float32} & Assembly SSE2 \\ \hline
-\texttt{quantpivot64}    & \texttt{float64} & Assembly AVX2 \\ \hline
-\texttt{quantpivot64omp} & \texttt{float64} & Assembly AVX2 + OpenMP \\ \hline
+\texttt{quantpivot32}    & \texttt{float32} & SIMD SSE2 (intrinseci) \\ \hline
+\texttt{quantpivot64}    & \texttt{float64} & SIMD AVX2 (intrinseci) \\ \hline
+\texttt{quantpivot64omp} & \texttt{float64} & SIMD AVX2 (intrinseci) + OpenMP \\ \hline
 \end{tabularx}
 \caption{I tre moduli del pacchetto.}
 \end{table}
@@ -37,9 +37,9 @@ ids, dists = model.predict(Q, k=8)
 L'integrazione è organizzata in tre strati, dal più esterno al più interno:
 
 \begin{enumerate}
-    \item \textbf{Wrapper C-API} (\texttt{quantpivot*\_py.c}): definisce il tipo Python \texttt{QuantPivot} e i suoi metodi. Riceve gli array NumPy, ne verifica forma (bidimensionale), tipo (\texttt{float32}/\texttt{float64} a seconda del modulo) e allineamento, quindi ne passa al livello inferiore i puntatori ai dati grezzi: \textbf{nessuna copia} dei dati viene mai effettuata.
+    \item \textbf{Wrapper C-API} (\texttt{quantpivot*\_py.c}): definisce il tipo Python \texttt{QuantPivot} e i suoi metodi. Riceve gli array NumPy, ne verifica forma (bidimensionale), tipo (\texttt{float32}/\texttt{float64} a seconda del modulo) e contiguità in memoria, quindi ne passa al livello inferiore i puntatori ai dati grezzi: \textbf{nessuna copia} dei dati viene mai effettuata.
     \item \textbf{Adattatore} (\texttt{quantpivot32.c}, \texttt{quantpivot64.c}, \texttt{quantpivot64omp.c}): traduce la struttura ponte \texttt{params} nelle strutture native del nucleo (\texttt{MatrixF32}/\texttt{MatrixF64}, \texttt{Index}, \texttt{Neighbor}) e invoca \texttt{build\_index()} in \texttt{fit} e \texttt{knn\_query\_all()} in \texttt{predict}.
-    \item \textbf{Nucleo condiviso}: gli stessi \texttt{index.c}, \texttt{query.c}/\texttt{query64.c}, \texttt{quantization.c} e le routine Assembly degli eseguibili, compilati con le medesime macro (\texttt{USE\_SSE2\_ASM} o \texttt{USE\_AVX\_ASM}, più \texttt{-fopenmp} per la variante parallela).
+    \item \textbf{Nucleo condiviso}: gli stessi \texttt{index.c}, \texttt{query.c}/\texttt{query64.c}, \texttt{quantization.c} e il calcolo della distanza vettorizzato con gli \emph{intrinseci SIMD} di \texttt{distance.c}, compilato con le macro \texttt{USE\_SSE2} (32~bit) o \texttt{USE\_AVX} (64~bit), più \texttt{-fopenmp} per la variante parallela.
 \end{enumerate}
 
 La struttura \texttt{params}, definita in \texttt{include/common.h}, è l'unico oggetto che attraversa il confine tra gli strati: raccoglie i puntatori a dataset e query, i parametri del problema ($h$, $k$, $x$, dimensioni), il puntatore all'indice costruito e i buffer dei risultati. La macro \texttt{QP\_DOUBLE} commuta il tipo scalare \texttt{type} (\texttt{float}/\texttt{double}) e la costante di allineamento \texttt{align} (16/32 byte), permettendo di condividere lo stesso wrapper tra le versioni a diversa precisione.
@@ -54,17 +54,15 @@ La coesistenza del garbage collector di Python con le allocazioni manuali del C 
 \end{itemize}
 
 \section{Sistema di build}
-Il pacchetto si compila con \texttt{setuptools} (\texttt{python/setup.py} + \texttt{pyproject.toml}), che dichiara tre estensioni native — una per modulo — ciascuna composta dai propri sorgenti C \emph{e dal file Assembly} \texttt{.S} corrispondente, con le macro e i flag appropriati (\texttt{-O3 -msse2} / \texttt{-O3 -mavx2}, più \texttt{-fopenmp} per la variante parallela).
+Il pacchetto si compila con \texttt{setuptools} (\texttt{setup.py} + \texttt{pyproject.toml} nella radice del progetto), che dichiara tre estensioni native — una per modulo — composte dal wrapper, dall'adattatore e dal nucleo di calcolo condiviso. Per garantire la \textbf{portabilità}, il calcolo della distanza passa per gli \emph{intrinseci SIMD} (\texttt{distance.c}) anziché per le routine Assembly esterne: gli intrinseci sono supportati in modo identico da \texttt{gcc}, \texttt{clang} e MSVC, quindi il pacchetto si compila con il \emph{compilatore di sistema} su Linux, macOS e Windows, senza richiedere alcun assemblatore né toolchain specifico.
 
-Due aspetti hanno richiesto una classe \texttt{build\_ext} personalizzata:
-\begin{itemize}
-    \item \texttt{distutils} non riconosce i sorgenti \texttt{.S}: l'estensione va registrata esplicitamente tra i tipi compilabili;
-    \item su Windows il compilatore predefinito sarebbe MSVC, che non è in grado di assemblare i file in sintassi GAS né accetta i flag GCC: la classe forza l'uso di \textbf{MinGW-w64} (GCC).
-\end{itemize}
+Una classe \texttt{build\_ext} personalizzata seleziona automaticamente i flag corretti in base al compilatore rilevato: \texttt{-O3 -msse2}/\texttt{-mavx2} e \texttt{-fopenmp} per \texttt{gcc}/\texttt{clang}, oppure \texttt{/O2 /arch:AVX2 /openmp} per MSVC. Nell'ambiente di riferimento della traccia (Linux, \texttt{gcc}) l'installazione si riduce a \texttt{pip install .} dalla cartella del progetto: il compilatore genera le estensioni e collega OpenMP tramite la \texttt{libgomp} di sistema, senza passi aggiuntivi.
 
-Il wheel prodotto viene infine reso \emph{autosufficiente} con lo strumento \texttt{delvewheel}, che vi incorpora le DLL runtime di GCC (\texttt{libgcc}, \texttt{libgomp}, \texttt{libwinpthread}): l'utente finale installa il pacchetto con un semplice \texttt{pip install} senza necessità di avere MinGW sul proprio sistema.
+Il posizionamento di \texttt{setup.py} nella radice (con il pacchetto sotto \texttt{python/}) evita inoltre il problema di \emph{shadowing}: dopo l'installazione l'\texttt{import} risolve sui moduli compilati in \texttt{site-packages} e non sui sorgenti, privi delle estensioni.
+
+Le routine Assembly scritte a mano (\texttt{distance\_sse2.S}, \texttt{distance\_avx2.S}) restano parte integrante del progetto: alimentano gli eseguibili standalone e il confronto prestazionale del Capitolo~4.
 
 \section{Verifica di correttezza del pacchetto}
-La libreria è stata sottoposta alla stessa verifica degli eseguibili: per ciascuno dei tre moduli, \texttt{fit} + \texttt{predict} sul carico di lavoro di riferimento ($n=2000$, $D=256$, $h=16$, $k=8$, $x=64$) riproducono \textbf{2000 query su 2000} dei file di riferimento ufficiali — stessi identificativi nello stesso ordine e stesse distanze (tolleranza $10^{-3}$ per \texttt{float32}, $10^{-9}$ per \texttt{float64}). Il percorso verificato attraversa l'intera catena: validazione NumPy, wrapper C-API, adattatore, nucleo C e routine Assembly (con OpenMP attivo nella terza variante).
+La libreria è stata sottoposta alla stessa verifica degli eseguibili: per ciascuno dei tre moduli, \texttt{fit} + \texttt{predict} sul carico di lavoro di riferimento ($n=2000$, $D=256$, $h=16$, $k=8$, $x=64$) riproducono \textbf{2000 query su 2000} dei file di riferimento ufficiali — stessi identificativi nello stesso ordine e stesse distanze (tolleranza $10^{-3}$ per \texttt{float32}, $10^{-9}$ per \texttt{float64}). Il percorso verificato attraversa l'intera catena: validazione NumPy, wrapper C-API, adattatore e nucleo C con calcolo vettorizzato tramite intrinseci SIMD (con OpenMP attivo nella terza variante).
 
 Lo script dimostrativo \texttt{examples/esempio\_knn.py} ripete questa verifica a ogni esecuzione, riportando anche i tempi: sul carico di riferimento la variante \texttt{quantpivot64omp} completa la fase di \texttt{predict} in circa 60--70~ms, coerentemente con i risultati del Capitolo 4. Il beneficio del multi-threading resta dunque pienamente fruibile anche dall'interno dell'interprete Python: durante l'esecuzione delle routine native il GIL non costituisce un ostacolo, poiché il parallelismo è gestito interamente da OpenMP nello strato C.

@@ -18,82 +18,55 @@ Indice:
 
 | Per... | Serve |
 |---|---|
-| **Usare** un wheel già compilato | Python 3.x + NumPy |
-| **Compilare** la libreria da sorgente | Python 3.x, NumPy, **MinGW-w64 (GCC)** |
-| **Compilare** gli eseguibili C | Code::Blocks + MinGW-w64 (oppure GCC) |
+| **Compilare e installare** la libreria Python | Python 3.x + NumPy + un **compilatore C** |
+| **Compilare** gli eseguibili C | Code::Blocks + MinGW-w64 (oppure `gcc` su Linux) |
 
-Installare MinGW-w64 su Windows (una tantum):
-```powershell
-winget install -e --id BrechtSanders.WinLibs.POSIX.UCRT
-```
-Annotare il percorso della cartella `mingw64\bin` (es.
-`C:\Users\<utente>\AppData\Local\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.POSIX.UCRT_*\mingw64\bin`).
+Compilatore C per la libreria:
+* **Linux / macOS:** `gcc` o `clang` (di norma già presenti); su Linux installa gli header
+  di Python, es. `sudo apt install python3-dev`.
+* **Windows:** MSVC (Build Tools per Visual Studio) **oppure** MinGW-w64.
+
+Il calcolo della distanza usa **intrinseci SIMD** (portabili): **non serve alcun
+assemblatore né MinGW**, basta il compilatore di sistema.
 
 ---
 
 ## 2. Installare la libreria Python
 
-> **⚠️ Quale `python` usare (PowerShell su Windows).** Spesso il comando `python` punta allo
-> *stub "Alias di esecuzione app"* del Microsoft Store (`...\WindowsApps\python.exe`), che
-> non è un interprete reale → errore *"Impossibile eseguire il programma 'python.exe'"*. Usa
-> l'interprete vero tramite percorso completo, memorizzandolo in una variabile di sessione:
-> ```powershell
-> $py = "$env:LOCALAPPDATA\Python\pythoncore-3.14-64\python.exe"   # adatta se diverso
-> & $py --version
-> ```
-> Per trovare il tuo: `Get-Command python -All` / `where.exe python`. **Attenzione:** `py`
-> può avviare un *altro* Python privo di NumPy/setuptools — assicurati di usare l'interprete
-> in cui hai installato le dipendenze. Nei comandi seguenti usa **`& $py`** al posto di
-> `python`. Inoltre **PowerShell non espande i caratteri jolly `*`** passati a programmi
-> esterni (`pip`, `delvewheel`): indica il nome completo del file, oppure espandi il glob con
-> `Get-ChildItem` (come mostrato sotto).
+Dalla **cartella principale del progetto** (quella che contiene `setup.py`):
 
-### Opzione A — installare il wheel già pronto (consigliata)
-Nel repository è presente un wheel **autosufficiente** (le DLL di GCC sono incluse:
-non serve avere MinGW installato per usarlo):
-
-```powershell
-# (definisci prima $py come nella nota sopra)
-& $py -m pip install python\dist\repaired\gruppo_ferrari_defusco_cuconato-1.0-cp314-cp314-win_amd64.whl
+```bash
+pip install .
 ```
 
-### Opzione B — ricompilare da sorgente
-Con la cartella `mingw64\bin` nel PATH della sessione:
+`setup.py` compila le tre estensioni (`quantpivot32` SSE2, `quantpivot64` AVX2,
+`quantpivot64omp` AVX2+OpenMP) scegliendo automaticamente i flag corretti per il
+compilatore in uso. Su Linux (`gcc`) OpenMP viene collegato tramite `-fopenmp` (libreria
+`libgomp` di sistema): nessun passo aggiuntivo.
 
-```powershell
-# interprete Python corretto (vedi nota sopra) e cartella bin di MinGW
-$py    = "$env:LOCALAPPDATA\Python\pythoncore-3.14-64\python.exe"   # adatta se diverso
-$mingw = (Resolve-Path "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.POSIX.UCRT_*\mingw64\bin").Path
-$env:Path = "$mingw;" + $env:Path
+### Verifica
+Esegui Python da **una cartella qualsiasi diversa da `python/`** — altrimenti la cartella
+sorgente `python/Gruppo_Ferrari_DeFusco_Cuconato/` maschera i moduli compilati e l'import
+fallisce con `ModuleNotFoundError: ..._quantpivot32`:
 
-# 1) entra nella cartella di packaging
-cd python
-
-# 2) costruisci il wheel (usa automaticamente MinGW)
-& $py setup.py bdist_wheel
-
-# 3) (consigliato) rendi il wheel autosufficiente includendo le DLL runtime
-& $py -m pip install delvewheel
-$src = (Get-ChildItem dist\*.whl | Select-Object -First 1).FullName    # espande il glob
-& $py -m delvewheel repair $src --add-path "$mingw" -w dist\repaired
-
-# 4) installa (espandi il glob: PowerShell non lo fa per gli exe esterni)
-$whl = (Get-ChildItem dist\repaired\*.whl | Select-Object -First 1).FullName
-& $py -m pip install --force-reinstall $whl
+```bash
+python -c "from Gruppo_Ferrari_DeFusco_Cuconato.quantpivot64omp import QuantPivot; print('OK')"
 ```
 
-In alternativa, installazione diretta (richiede però MinGW nel PATH **anche a runtime**):
-```powershell
-& $py -m pip install . --no-build-isolation
-```
-
-Verifica rapida dell'installazione — **da una cartella diversa da `python\`** (es. la root
-del progetto), altrimenti la cartella sorgente `python\Gruppo_Ferrari_DeFusco_Cuconato\`
-maschera il pacchetto installato e l'import fallisce:
-```powershell
-cd ..    # esci da python\ verso la root del progetto
-& $py -c "from Gruppo_Ferrari_DeFusco_Cuconato.quantpivot64omp import QuantPivot; print('OK')"
-```
+### Note per Windows (PowerShell)
+* Se `python` apre lo *stub* del Microsoft Store (errore *"Impossibile eseguire il programma
+  'python.exe'"*), usa il percorso completo dell'interprete:
+  ```powershell
+  $py = "$env:LOCALAPPDATA\Python\pythoncore-3.14-64\python.exe"   # adatta se diverso
+  & $py -m pip install .
+  ```
+* Il compilatore predefinito su Windows è **MSVC**. Per usare **MinGW** aggiungi la sua
+  cartella `bin` al PATH e installa forzandolo:
+  ```powershell
+  & $py setup.py build_ext --compiler=mingw32 install
+  ```
+  (in questo caso i moduli dipendono dalle DLL runtime di MinGW: tienile nel PATH oppure usa
+  `delvewheel` per un wheel autosufficiente).
 
 ---
 

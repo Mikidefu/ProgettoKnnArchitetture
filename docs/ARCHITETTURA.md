@@ -222,7 +222,7 @@ ciascuno con una classe `QuantPivot` (`fit` / `predict`):
   quantpivot32.c      ← adattatore: traduce `params` in MatrixF32/Index/Neighbor
       │                  e chiama l'algoritmo verificato
       ▼
-  index.c / query.c   ← algoritmo K-NN  →  distance32ASSEMBLY.c → distance_sse2.S
+  index.c / query.c   ← algoritmo K-NN  →  distance.c (intrinseci SSE2/AVX2)
 ```
 
 - **`include/common.h`** definisce la struct `params` (puntatori a dataset/query, parametri
@@ -230,24 +230,30 @@ ciascuno con una classe `QuantPivot` (`fit` / `predict`):
   `QP_DOUBLE`, il tipo scalare `type` (`float`/`double`) e l'allineamento `align` (16/32).
 - **`quantpivot{32,64,64omp}.c`**: `fit()` costruisce l'indice (`build_index`/`_f64`),
   `predict()` esegue `knn_query_all`/`_f64` e copia `id` e `dist_real` nei buffer di output.
-  La distanza approssimata passa per l'assembly grazie alle macro `USE_SSE2_ASM`/`USE_AVX_ASM`.
+  La distanza approssimata è vettorizzata con gli **intrinseci SIMD** di `distance.c`
+  (macro `USE_SSE2`/`USE_AVX`) — codice portabile su Linux, Windows e macOS.
 - **`quantpivot{32,64,64omp}_py.c`**: lo strato C-API (tipo Python, metodi `fit`/`predict`,
   conversione NumPy↔C, gestione memoria con `PyCapsule`).
 
-### 7.2 Build con `python/setup.py`
+### 7.2 Build con `setup.py` (nella radice del progetto)
 `setup.py` dichiara **tre estensioni** (una per modulo), ognuna compilata dai rispettivi
-sorgenti C + il file `.S`, con:
-- macro `USE_SSE2_ASM` (32 bit) oppure `USE_AVX_ASM`+`QP_DOUBLE` (64 bit);
-- flag `-O3 -msse2` / `-O3 -mavx2` (+ `-fopenmp` per la variante OMP);
-- una classe **`build_ext` personalizzata** che (1) abilita i sorgenti `.S`/`.s` (distutils
-  non li riconosce di default) e (2) forza il compilatore **MinGW (`mingw32`)** su Windows,
-  indispensabile perché i file `.S` GAS e i flag GCC non sono supportati da MSVC.
+sorgenti C **+ `distance.c`** (percorso intrinseci portabile), con:
+- macro `USE_SSE2` (32 bit) oppure `USE_AVX`+`QP_DOUBLE` (64 bit);
+- una classe **`build_ext` personalizzata** che sceglie i flag in base al compilatore
+  rilevato: `-O3 -msse2`/`-mavx2` (+`-fopenmp`) per gcc/clang, `/O2 /arch:AVX2` (+`/openmp`) per MSVC.
 
-### 7.3 Toolchain e processo di build
-- Richiede **MinGW-w64** (GCC). Su Windows: `winget install -e --id BrechtSanders.WinLibs.POSIX.UCRT`.
-- Build del wheel: `python setup.py bdist_wheel` (dalla cartella `python/`, con `mingw64/bin` nel PATH).
-- Wheel **autosufficiente**: `delvewheel repair` incorpora le DLL runtime di GCC
-  (`libgcc_s_seh`, `libgomp`, `libwinpthread`) così il pacchetto funziona senza MinGW installato.
+Il pacchetto vive sotto `python/` mentre `setup.py` sta nella radice
+(`package_dir={'': 'python'}`): così `pip install .` dalla radice trova sia il pacchetto sia i
+sorgenti C, e dopo l'installazione l'import risolve sui moduli compilati in `site-packages`
+invece che sui sorgenti — evitando lo *shadowing*.
+
+### 7.3 Toolchain
+- Serve solo un **compilatore C** e NumPy: gcc/clang su Linux/macOS (su Linux anche
+  `python3-dev`), MSVC o MinGW su Windows. Nessun assemblatore né toolchain specifico,
+  perché il calcolo usa gli intrinseci SIMD.
+- Installazione: **`pip install .`** dalla cartella principale del progetto.
+- Le routine Assembly (`distance_sse2.S`, `distance_avx2.S`) restano per gli **eseguibili
+  standalone** e il confronto del §9.
 
 Vedi `docs/GUIDA_UTILIZZO.md` per i comandi esatti.
 

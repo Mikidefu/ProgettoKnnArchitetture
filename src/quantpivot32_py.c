@@ -3,6 +3,9 @@
 #include <Python.h>
 #include <numpy/arrayobject.h>
 #include <xmmintrin.h>
+#ifdef _MSC_VER
+#include <malloc.h>   /* _mm_malloc / _mm_free su MSVC */
+#endif
 
 #include "common.h"
 
@@ -93,11 +96,11 @@ static PyObject* QuantPivot32_fit(QuantPivot32Object *self, PyObject *args, PyOb
 	// Verifica che siano array contigui
 	type* dataset = (type*)(PyArrayObject*)PyArray_DATA(ds_array);
 
-	uintptr_t addr = (uintptr_t)dataset;
-	int is_aligned = (addr % align == 0);
-
-	if(!is_aligned){
-		PyErr_SetString(PyExc_ValueError, "Input array (DS) not aligned");
+	// Il calcolo usa load non allineate: non serve allineamento. I dati devono
+	// però essere contigui in ordine C (row-major).
+	if(!PyArray_IS_C_CONTIGUOUS(ds_array)){
+		PyErr_SetString(PyExc_ValueError,
+			"Input array (DS) must be C-contiguous (use numpy.ascontiguousarray)");
 		return NULL;
 	}
 
@@ -164,11 +167,10 @@ static PyObject* QuantPivot32_predict(QuantPivot32Object *self, PyObject *args, 
 	// Verifica che siano array contigui
 	type* query = (type*)(PyArrayObject*)PyArray_DATA(query_array);
 
-	uintptr_t addr = (uintptr_t)query;
-	int is_aligned = (addr % align == 0);
-
-	if(!is_aligned){
-		PyErr_SetString(PyExc_ValueError, "Query array (Q) not aligned");
+	// Load non allineate: nessun vincolo di allineamento, solo contiguità C.
+	if(!PyArray_IS_C_CONTIGUOUS(query_array)){
+		PyErr_SetString(PyExc_ValueError,
+			"Query array (Q) must be C-contiguous (use numpy.ascontiguousarray)");
 		return NULL;
 	}
 
